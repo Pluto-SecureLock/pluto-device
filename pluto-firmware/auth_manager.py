@@ -38,10 +38,13 @@ class AuthManager:
         print(f"💾 Credentials saved securely: {data}")
 
     def _load_credentials(self, path: str = AUTH_FILE):
-        with open(path, "r") as f:
-            data = json.load(f)
-        salt = binascii.unhexlify(data["salt"])
-        return salt, data["hash"]
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            salt = binascii.unhexlify(data["salt"])
+            return salt, data["hash"]
+        except:
+            return None, None
 
 # TODO: Only if auth.db is empty or not present
 # Otherwise ask for PIN and verifies before setting it
@@ -57,6 +60,7 @@ class AuthManager:
             salt = self.generate_salt()
             pin_hash = self.hash_password(pin_bytes, salt)
             self._save_credentials(salt, pin_hash, path)
+            #TODO: if fingerprint is non initialized, it will not work
             self.fingerprint.set_pin(pin)
             print("🔑 PIN set successfully.")
             return pin_hash
@@ -87,12 +91,13 @@ class AuthManager:
     def _reset_authentication(self):
         self._authenticated = False
 
-    def is_registered(self, path: str = AUTH_FILE) -> bool:
+    def is_registered(self, ) -> bool:
+        path = AUTH_FILE
         try:
             with open(path, "r") as f:
                 data = json.load(f)
             return "hash" in data and "salt" in data
-        except FileNotFoundError:
+        except:
             return False
 
     def read_sysparams_and_compare(self, path: str = SYS_PARAM_FILE) -> bool:

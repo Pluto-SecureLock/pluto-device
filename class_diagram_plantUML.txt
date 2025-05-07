@@ -1,0 +1,260 @@
+class main {
+    +main()
+}
+main --> ApplicationContext
+
+class ApplicationContext {
+    +__init__()
+    +transition_to(new_state)
+    +update()
+    +initialize_fingerprint(pin: int)
+
+    -usb: USBSerial
+    -hid_output: HIDOutput
+    -fingerprint: FingerprintAuthenticator
+    -authenticator: AuthManager
+    -processor: CommandProcessor
+    -encoder: RotaryEncoderWithButton
+    -tft: Screen
+    -password_length: int
+    -complexity_index: int
+    -settings_index: int
+    -settings_list: list
+    -password_generated: str
+    -menu_modes: list
+    -menu_index: int
+    -save_decision: list
+    -save_index: int
+    -login_index: int
+    -current_state: BaseState
+}
+
+ApplicationContext --> USBSerial
+ApplicationContext --> HIDOutput
+ApplicationContext --> CommandProcessor
+ApplicationContext --> FingerprintAuthenticator
+ApplicationContext --> AuthManager
+ApplicationContext --> RotaryEncoderWithButton
+ApplicationContext --> Screen
+ApplicationContext --> BaseState
+
+class FingerprintAuthenticator {
+    +__init__(max_fingers, pin)
+    +authenticate()
+    +enroll(location: int)
+    +delete(location: int)
+    +update(location: int)
+    +finger_irq()
+    +check_system_parameters() : bool
+    +set_pin(pin: int) : str
+    +has_fingerprints() : bool
+    -_verify_sensor(DEBUG: bool)
+    -_ensure_two_fingerprints(DEBUG: bool) : bool
+    -_usb_input(prompt: str) : str
+    -_get_valid_id() : int
+    -_enable_irq()
+    -uart: UART
+    -finger: Adafruit_Fingerprint
+    -irq_pin: DigitalInOut
+    -_authenticated: bool
+    -_last_irq_state: bool
+}
+
+class USBSerial {
+    +__init__()
+    +read(end_char='', echo=True)
+    +write(text)
+    -_buffer: str
+}
+
+class HIDOutput {
+    +__init__()
+    +type_text(text, delay=0.1)
+    +press_enter()
+    +press_tab()
+    +key_strokes(key_name: str)
+    -keyboard: Keyboard
+    -layout: KeyboardLayoutUS
+}
+
+class AuthManager {
+    +__init__()
+    +attach_fingerprint(fingerprint)
+    +generate_salt() : bytes
+    +hash_password(password: bytes, salt: bytes) : str
+    +set_pin(pin: int, path: str = AUTH_FILE) : str
+    +verify_pin(pin: int) : bool
+    +is_registered() : bool
+    +read_sysparams_and_compare(path: str = SYS_PARAM_FILE) : bool
+    +authenticate() : bool
+    +get_vault()
+    +authenticated
+    +f_authenticated
+    -fingerprint: FingerprintAuthenticator
+    -_authenticated: bool
+    -_f_authenticated: bool
+    -_vault: KeyStore
+}
+
+class KeyStore {
+    +__init__(master_key)
+    +get(site)
+    +add(site, username, password)
+    +delete(domain)
+    -_load_db()
+    -_save()
+    -db: dict
+    -master_key: str
+}
+
+AuthManager --> FingerprintAuthenticator
+AuthManager --> KeyStore
+
+
+class CommandProcessor {
+    +__init__(hid_output, usb_output, authenticator)
+    +execute(command)
+    -hid: HIDOutput
+    -usb: USBSerial
+    -authenticator: AuthManager
+}
+
+CommandProcessor --> HIDOutput
+CommandProcessor --> USBSerial
+CommandProcessor --> AuthManager
+
+class RotaryEncoderWithButton {
+    +__init__(pin_clk, pin_dt, pin_sw, pin_rtr)
+    +update()
+    +get_direction() : str
+    +was_pressed() : bool
+    +rtr_was_pressed() : bool
+    +get_position() : int
+    +get_delta() : int
+    -encoder: IncrementalEncoder
+    -button: DigitalInOut
+    -rtr_button: DigitalInOut
+    -last_position: int
+    -last_button: bool
+    -last_rtr: bool
+    -rtr_pressed: bool
+    -direction: str
+    -button_pressed: bool
+}
+
+class Screen {
+    +__init__(spi, cs_pin, dc_pin, rst_pin, width, height, rotation, colstart, rowstart)
+    +clear()
+    +write(text, x, y, color, background_color, scale, identifier)
+    +update(identifier, new_text)
+    +remove(identifier)
+    -display: ST7735R
+    -splash: displayio.Group
+    -text_labels: dict
+}
+
+class BaseState {
+    +__init__(context)
+    +enter()
+    +handle()
+    +exit()
+    -context: ApplicationContext
+}
+
+class SetupState {
+    - PinEntryHelper
+    - Screen
+    - AuthManager
+    - AutoState
+}
+
+class UnblockState {
+    - PinEntryHelper
+    - Screen
+    - AuthManager
+    - AutoState
+    - FingerprintAuthenticator
+}
+class AutoState {
+    - Screen
+    - USBSerial
+    - CommandProcessor
+    - AuthManager
+    - MenuState
+    - FingerprintAuthenticator
+}
+
+class MenuState {
+    - Screen
+    - RotaryEncoderWithButton
+    - AuthManager
+    - AuthState
+    - PassLengthState
+    - SettingsState
+}
+class AuthState {
+    - Screen
+    - USBSerial
+    - AuthManager
+    - LoginState
+    - FingerprintAuthenticator
+}
+
+class LoginState {
+    - Screen
+    - AuthManager
+    - USBSerial
+    - CommandProcessor
+    - KeyStore
+}
+class PassLengthState {
+    - Screen
+    - RotaryEncoderWithButton
+    - PassComplexState
+    - MenuState
+} 
+
+class PassComplexState {
+    - Screen
+    - RotaryEncoderWithButton
+    - PassSaveState
+    - PassLengthState
+    - CommandProcessor
+    - HIDOutput
+}
+class PassSaveState {
+    - Screen
+    - RotaryEncoderWithButton
+    - PassComplexState
+    - DomainEntryState
+    - AutoState
+} 
+
+class DomainEntryState {
+    - Screen
+    - USBSerial
+    - CommandProcessor
+    - KeyStore
+    - AutoState
+}
+class SettingsState {
+    - Screen
+    - RotaryEncoderWithButton
+    - PinEntryHelper
+    - AuthManager
+    - FingerprintAuthenticator
+}
+
+BaseState <|-- SetupState
+BaseState <|-- UnblockState
+BaseState <|-- AutoState
+BaseState <|-- MenuState
+BaseState <|-- AuthState
+BaseState <|-- LoginState
+BaseState <|-- PassLengthState
+BaseState <|-- PassComplexState
+BaseState <|-- PassSaveState
+BaseState <|-- DomainEntryState
+BaseState <|-- SettingsState
+
+

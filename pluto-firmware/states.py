@@ -1,8 +1,5 @@
 import time
 from utils import generate_password
-import board
-import digitalio
-import analogio
 
 # --- Base State Class --- #
 class BaseState:
@@ -25,42 +22,31 @@ class BaseState:
 class SetupState(BaseState):
     def enter(self):
         self.context.tft.clear()
-        self.context.tft.write("🛠 Initial Setup...", x=10, y=10)
+        self.context.tft.write("Initial Setup...", x=10, y=10)
 
         # PIN setup
-        self.context.tft.write("🔑 Set 4-digit PIN", x=10, y=70)
-        pin = self._prompt_pin()
-        self.context.authenticator.set_pin(pin)
-
-        self.context.tft.write("✅ Setup Complete", x=10, y=90)
-        time.sleep(2)
-        self.context.transition_to(AutoState(self.context))
-
-    def _prompt_pin(self):
-        """Use encoder to collect 4-digit PIN."""
-        digits = [0, 0, 0, 0]
-        index = 0
-        while index < 4:
-            self.context.tft.update("pin_entry", f"Enter PIN: {''.join(str(d) for d in digits)}")
-            self.context.encoder.update()
-            delta = self.context.encoder.get_delta()
-            if delta:
-                digits[index] = (digits[index] + delta) % 10
-                self.context.tft.update("pin_entry", f"Enter PIN: {''.join(str(d) for d in digits)}")
-
-            if self.context.encoder.was_pressed():
-                index += 1
-                time.sleep(0.2)  # debounce
-        return int(''.join(str(d) for d in digits))
+        self.context.tft.write("🔑 Set 4-digit PIN", x=10, y=40)
+        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="Enter your Admin PIN")
 
     def handle(self):
-        pass
+        self.pin_helper.update()
+
+        if self.pin_helper.is_done():
+            new_pin = self.pin_helper.get_pin()
+
+            self.context.authenticator.set_pin(new_pin)
+            self.context.tft.write("✅ PIN updated!", x=10, y=80, identifier="done")
+            time.sleep(1)
+            self.context.transition_to(AutoState(self.context))
 
     def exit(self):
         self.context.tft.clear()
 
 class UnblockState(BaseState):
     def enter(self):
+        if not self.context.authenticator.is_registered():
+            print("SET UP A NEW PIN")
+            self.context.transition_to(SetupState(self.context))
         self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="Enter Admin PIN")
         
     def handle(self):
@@ -70,7 +56,6 @@ class UnblockState(BaseState):
             pin = self.pin_helper.get_pin()
 
             if self.context.authenticator.verify_pin(pin):
-                print(pin)
                 self.context.initialize_fingerprint(pin)
                 self.context.transition_to(AutoState(self.context))
             else:

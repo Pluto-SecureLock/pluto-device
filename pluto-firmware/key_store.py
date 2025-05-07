@@ -10,9 +10,6 @@ class KeyStore:
         self.db = self._load_db()
 
     def _load_db(self):
-        # if KEYS_FILE not in os.listdir("/"):
-        #     return {}
-
         try:
             with open(KEYS_FILE, "r") as f:
                 encrypted = f.read().strip()

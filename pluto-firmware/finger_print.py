@@ -6,13 +6,10 @@ import json
 import digitalio
 from usb_serial import USBSerial
 
-#password = 1234
-
 class FingerprintAuthenticator:
     def __init__(self, max_fingers=2, pin=0000):
         self.usb = USBSerial()
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
-        pin = 1234
         password_tuple = tuple(pin.to_bytes(4, 'big'))
         self.finger = adafruit_fingerprint.Adafruit_Fingerprint(self.uart, passwd=password_tuple)
         self.max_fingers = max_fingers
