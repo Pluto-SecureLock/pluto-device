@@ -91,6 +91,9 @@ class AuthManager:
     def _reset_authentication(self):
         self._authenticated = False
 
+    def _reset_f_authentication(self):
+        self._f_authenticated = False
+
     def is_registered(self, ) -> bool:
         path = AUTH_FILE
         try:
@@ -122,16 +125,10 @@ class AuthManager:
             return False
 
     def authenticate(self) -> bool:
-        # self.fingerprint.authenticate()
-        # return self.fingerprint.authenticated
-        # # if self.fingerprint.authenticated:
-        # #     print("✅ Fingerprint authenticated")
-        # #     self.vault = KeyStore("ALOJHOMORE24")
-        # #     return self.vault
-
         if not self.fingerprint:
             raise RuntimeError("No fingerprint sensor attached.")
-        
+        self._reset_f_authentication()
+
         master_key = "ALOJHOMORE24"
 
         self.fingerprint.authenticate()

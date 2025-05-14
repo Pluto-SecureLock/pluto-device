@@ -8,6 +8,7 @@ from usb_serial import USBSerial
 
 class FingerprintAuthenticator:
     def __init__(self, max_fingers=2, pin=0000):
+        self.screen = None
         self.usb = USBSerial()
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
         password_tuple = tuple(pin.to_bytes(4, 'big'))
@@ -17,6 +18,9 @@ class FingerprintAuthenticator:
         self._authenticated = False  # private variable
         self._last_irq_state = self.irq_pin.value  # track for edge detection
         self._verify_sensor()
+
+    def attach_screen(self, screen):
+        self.screen = screen
 
     def _verify_sensor(self,DEBUG=True):
         if DEBUG: print("🔋 Verifying sensor...")
@@ -85,10 +89,10 @@ class FingerprintAuthenticator:
         triggered = self._last_irq_state and not current_state  # HIGH -> LOW transition
         self._last_irq_state = current_state
         if triggered:
-            # Optionally wait until released
-            while not self.irq_pin.value:
-                time.sleep(0.01)
-        return triggered
+        #     # Optionally wait until released
+        #     while not self.irq_pin.value:
+        #         time.sleep(0.01)
+            return triggered
     
     def check_system_parameters(self) -> bool:
         self.finger.read_sysparam()
@@ -161,26 +165,42 @@ class FingerprintAuthenticator:
         print(" ✅")
         return True
 
+    def _reset_authentication(self):
+        self._authenticated = False
+
     def authenticate(self):
+
+        self._reset_authentication()  # Reset authentication status
+
         self._verify_sensor(True)
 
         print("🤚 Place finger...", end="")
+        self.screen.clear()
+        self.screen.write("Place finger...", line=1, identifier="line1")
         while self.finger.get_image() != adafruit_fingerprint.OK:
             time.sleep(0.05)
         print(" 📸")
 
         if self.finger.image_2_tz(1) != adafruit_fingerprint.OK:
             print(" ⚠️ Conversion failed")
+            self.screen.update(identifier="line1", new_text="Conversion failed...")
             return None
 
         print(" 🔍 Searching...", end="")
         if self.finger.finger_search() != adafruit_fingerprint.OK:
             print(" ❌ No match")
+            self.screen.update(identifier="line1", new_text="NOT a match")
+            #self.finger.set_led(color=1, mode=2) # Flash red if fingerprint IS NOT a match
             return None
 
         print(f"✅ Match: ID {self.finger.finger_id} (score {self.finger.confidence})")
         
+        self.screen.update(identifier="line1", new_text=f"Match: ID {self.finger.finger_id} (score {self.finger.confidence})")
+
         self._authenticated = True  # ✅ only change from here
+        time.sleep(1)
+        #self.finger.set_led(color=3, mode=2) # Flash purple if fingerprint IS a match
+        self.screen.update(identifier="line1", new_text="") # Clear screen before returning
         return self.finger.finger_id
 
     def delete(self, location: int):

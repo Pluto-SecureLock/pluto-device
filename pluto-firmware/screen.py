@@ -1,36 +1,26 @@
 import board
-import busio
 import displayio
 import terminalio
-from adafruit_st7735r import ST7735R
 from adafruit_display_text import label
-
-# Configuración SPI
-SPI = busio.SPI(clock=board.SCK, MOSI=board.D11)
-CS_PIN = board.D12
-DC_PIN = board.D10
-RST_PIN = board.D8
+from adafruit_displayio_ssd1306 import SSD1306
+import busio
 
 class Screen:
-    def __init__(self, spi=SPI, cs_pin=CS_PIN, dc_pin=DC_PIN, rst_pin=RST_PIN,
-                 width=160, height=160, rotation=270, colstart=0, rowstart=0):
-        # Liberar cualquier display previo
+    def __init__(self, i2c=None, width=128, height=32, address=0x3C):
+        # Release any previous displays
         displayio.release_displays()
 
-        # Configure the SPI bus
-        display_bus = displayio.FourWire(spi, command=dc_pin, chip_select=cs_pin, reset=rst_pin)
+        # Initialize I2C if not provided
+        if i2c is None:
+            i2c = busio.I2C(board.SCL, board.SDA)
 
-        # Initialize the ST7735R display
-        self.display = ST7735R(
-            display_bus,
-            width=width,
-            height=height,
-            rotation=rotation,
-            colstart=colstart,
-            rowstart=rowstart,
-            bgr=True
-        )
+        # Initialize display bus
+        display_bus = displayio.I2CDisplay(i2c, device_address=address)
 
+        # Create the display object
+        self.display = SSD1306(display_bus, width=width, height=height)
+        # Rotate the display 180 degrees
+        self.display.rotation = 180
         # Create a group to manage display content
         self.splash = displayio.Group()
         self.display.root_group = self.splash
@@ -38,24 +28,36 @@ class Screen:
         # Dictionary to store text labels
         self.text_labels = {}
 
+        # Mapping for line numbers to coordinates
+        self.line_map = {
+            1: (0, 10),
+            2: (0, 20),
+            3: (0, 30),
+            4: (0, 40)
+        }
+
     def clear(self):
         """Clears the screen by removing all elements from the group."""
         self.splash = displayio.Group()
         self.display.root_group = self.splash
         self.text_labels.clear()
 
-    def write(self, text, x=0, y=0, color=0xFFFFFF, background_color=None, scale=1, identifier=None):
+    def write(self, text, line=1, color=0xFFFFFF, background_color=None, scale=1, identifier=None):
         """
-        Displays the provided text on the screen at position (x, y).
+        Displays the provided text on the screen at the specified line.
 
         :param text: Text to display.
-        :param x: Horizontal position of the text.
-        :param y: Vertical position of the text.
+        :param line: Line number (1, 2, 3, 4, etc.)
         :param color: Text color in hexadecimal format (default: white).
         :param background_color: Background color in hexadecimal format (default: None).
         :param scale: Text scale (size).
         :param identifier: Unique identifier for the text label.
         """
+        if line not in self.line_map:
+            raise ValueError(f"Line {line} is not valid. Available lines: {list(self.line_map.keys())}")
+
+        x, y = self.line_map[line]
+
         text_area = label.Label(
             terminalio.FONT,
             text=text,
@@ -81,6 +83,30 @@ class Screen:
         else:
             raise ValueError(f"No text label found with identifier '{identifier}'.")
 
+    def save_state(self):
+        """
+        Saves the current state of the screen labels.
+        Returns a dictionary with the identifier as key and text as value.
+        """
+        saved_state = {}
+        for identifier, text_label in self.text_labels.items():
+            saved_state[identifier] = text_label
+        return saved_state
+
+    def restore_state(self, saved_state):
+        """
+        Restores the screen to a previously saved state.
+
+        :param saved_state: A dictionary with the identifier as key and text as value.
+        """
+        self.clear()
+        # Re-create the text labels exactly as they were
+        for identifier, text_area in saved_state.items():
+            if identifier not in self.text_labels:
+                self.text_labels[identifier] = text_area
+            else:
+                pass
+
     def remove(self, identifier):
         """
         Removes the text label identified by 'identifier' from the display.
@@ -93,71 +119,3 @@ class Screen:
         else:
             raise ValueError(f"No text label found with identifier '{identifier}'.")
 
-# import board
-# import busio
-# import displayio
-# import terminalio
-# from adafruit_display_text import label
-# from adafruit_ssd1306 import SSD1306_I2C  # I2C OLED driver
-
-# # Configuración I2C
-# I2C = busio.I2C(scl=board.GP1, sda=board.GP0)  # adapt pins if needed
-
-# class Screen:
-#     def __init__(self, i2c=I2C, width=128, height=64, address=0x3C):
-#         # Liberar cualquier display previo
-#         displayio.release_displays()
-
-#         # Configure the I2C bus
-#         display_bus = displayio.I2CDisplay(i2c, device_address=address)
-
-#         # Initialize the SSD1306 I2C display
-#         self.display = SSD1306_I2C(
-#             width=width,
-#             height=height,
-#             i2c=i2c,
-#             addr=address
-#         )
-
-#         # Create a group to manage display content
-#         self.splash = displayio.Group()
-#         self.display.show(self.splash)
-
-#         # Dictionary to store text labels
-#         self.text_labels = {}
-
-#     def clear(self):
-#         """Clears the screen by removing all elements from the group."""
-#         self.splash = displayio.Group()
-#         self.display.show(self.splash)
-#         self.text_labels.clear()
-
-#     def write(self, text, x=0, y=0, color=0xFFFFFF, background_color=None, scale=1, identifier=None):
-#         """Displays text on the screen."""
-#         text_area = label.Label(
-#             terminalio.FONT,
-#             text=text,
-#             color=color,
-#             background_color=background_color,
-#             scale=scale,
-#             x=x,
-#             y=y
-#         )
-#         self.splash.append(text_area)
-#         if identifier:
-#             self.text_labels[identifier] = text_area
-
-#     def update(self, identifier, new_text):
-#         """Updates text of an existing label."""
-#         if identifier in self.text_labels:
-#             self.text_labels[identifier].text = new_text
-#         else:
-#             raise ValueError(f"No text label found with identifier '{identifier}'.")
-
-#     def remove(self, identifier):
-#         """Removes a text label from the display."""
-#         if identifier in self.text_labels:
-#             text_area = self.text_labels.pop(identifier)
-#             self.splash.remove(text_area)
-#         else:
-#             raise ValueError(f"No text label found with identifier '{identifier}'.")

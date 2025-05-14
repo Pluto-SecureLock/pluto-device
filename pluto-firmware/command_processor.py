@@ -51,10 +51,11 @@ class CommandProcessor:
             _, msg = command.split(" ", 1)
             encrypted = encrypt_aes_cbc(msg, key_string=self.master_key)
             
-        elif command.startswith("get "):
-            if not self.authenticated:
-                self.usb.write("🔒 Auth required before accessing vault.\n")
-                return
+        elif command.startswith("type "):
+            #TODO : Check if authenticated with authenticator finger before accessing vault
+            # if not self.authenticator.f_authenticated:
+            #     self.usb.write("🔒 Auth required before accessing vault.\n")
+            #     return
 
             _, domain = command.split(" ", 1)
             domain = domain.strip()
@@ -72,26 +73,70 @@ class CommandProcessor:
                 self.hid.key_strokes("ENTER")
             except Exception as e:
                 self.usb.write(f"❌ Error retrieving credentials: {e}\n")
+                print(f"Error: {e}")
 
         elif command.startswith("add "):
             try:
-                domain, raw_data = command[4:].split("[", 1)
+                # Split by the first space to separate the command
+                raw_data = command[4:].strip()
+
+                # Split by the first colon to separate domain and credentials
+                domain, credentials = raw_data.split(":", 1)
+
+                # Further split the credentials into username and password
+                username, password = credentials.split(",", 1)
+
+                # Clean up spaces
                 domain = domain.strip()
-                creds_data = raw_data.strip("] \n")
+                username = username.strip()
+                password = password.strip()
 
-                data = {}
-                for item in creds_data.split(","):
-                    key, value = item.split(":")
-                    data[key.strip()] = value.strip()
+                # Prepare the data dictionary
+                data = {
+                    "username": username,
+                    "password": password
+                }
 
+                # Update the vault
                 vault = self.authenticator.get_vault()
                 vault.db[domain] = data
-                vault.update()
+                vault.add(domain, username, password)
                 self.usb.write(f"✅ Added credentials for {domain}\n")
 
             except Exception as e:
                 self.usb.write(f"❌ Failed to add credentials: {e}\n")
+                print(f"Error: {e}")
         
+        elif command.startswith("get "):
+            #TODO : Check if authenticated with authenticator finger before accessing vault
+            # if not self.authenticator.f_authenticated:
+            #     self.usb.write("🔒 Auth required before accessing vault.\n")
+            #     return
+
+            _, domain = command.split(" ", 1)
+            domain = domain.strip()
+            try:
+                vault = self.authenticator.get_vault()
+                creds = vault.get(domain)
+                if not creds:
+                    self.usb.write("Error: Domain not found\n")
+                    return
+                self.usb.write(f"{domain}: {creds}")
+            except Exception as e:
+                self.usb.write(f"Error: retrieving credentials: {e}\n")
+                #print(f"Error: {e}")
+
+        elif command.startswith("showkeys"):
+            #TODO : Check if authenticated with authenticator finger before accessing vault
+            # if not self.authenticator.f_authenticated:
+            #     self.usb.write("🔒 Auth required before accessing vault.\n")
+            #     return
+            try:
+                vault = self.authenticator.get_vault()
+                self.usb.write(f"{list(vault.db.keys())}\n")
+            except Exception as e:
+                self.usb.write(f"Error: retrieving credentials: {e}\n")
+
         elif command.startswith("delete "):
             _, domain = command.split(" ", 1)
             domain = domain.strip()
@@ -106,7 +151,7 @@ class CommandProcessor:
                     self.usb.write("⚠️ Domain not found\n")
             except Exception as e:
                 self.usb.write(f"❌ Failed to delete credentials: {e}\n")
-                
+
         elif command.startswith("modify "):
             try:
                 domain, rest = command[7:].split("[", 1)

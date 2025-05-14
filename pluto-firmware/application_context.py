@@ -15,7 +15,7 @@ class ApplicationContext:
         self.authenticator = AuthManager()  # Accepts no fingerprint initially
         self.processor = CommandProcessor(self.hid_output,self.usb,self.authenticator)
         self.encoder = RotaryEncoderWithButton()
-        self.tft = Screen()
+        self.screen = Screen()
 
         # Application data / shared state
         self.password_length = 12
@@ -48,4 +48,5 @@ class ApplicationContext:
         if self.fingerprint is None:
             self.fingerprint = FingerprintAuthenticator(pin=pin)
             self.authenticator.attach_fingerprint(self.fingerprint)
+            self.fingerprint.attach_screen(self.screen)
 

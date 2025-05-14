@@ -21,12 +21,12 @@ class BaseState:
 # --- State Implementations --- #
 class SetupState(BaseState):
     def enter(self):
-        self.context.tft.clear()
-        self.context.tft.write("Initial Setup...", x=10, y=10)
+        self.context.screen.clear()
+        self.context.screen.write("Initial Setup...", line=1, identifier="setup")
 
         # PIN setup
-        self.context.tft.write("🔑 Set 4-digit PIN", x=10, y=40)
-        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="Enter your Admin PIN")
+        self.context.screen.write("🔑 Set 4-digit PIN",line=2)
+        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter your Admin PIN")
 
     def handle(self):
         self.pin_helper.update()
@@ -35,19 +35,19 @@ class SetupState(BaseState):
             new_pin = self.pin_helper.get_pin()
 
             self.context.authenticator.set_pin(new_pin)
-            self.context.tft.write("✅ PIN updated!", x=10, y=80, identifier="done")
+            self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
             time.sleep(1)
             self.context.transition_to(AutoState(self.context))
 
     def exit(self):
-        self.context.tft.clear()
+        self.context.screen.clear()
 
 class UnblockState(BaseState):
     def enter(self):
         if not self.context.authenticator.is_registered():
             print("SET UP A NEW PIN")
             self.context.transition_to(SetupState(self.context))
-        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="Enter Admin PIN")
+        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
         
     def handle(self):
         self.pin_helper.update()
@@ -59,26 +59,26 @@ class UnblockState(BaseState):
                 self.context.initialize_fingerprint(pin)
                 self.context.transition_to(AutoState(self.context))
             else:
-                self.context.tft.update("pin_view", "❌ Wrong PIN")
+                self.context.screen.update("pin_view", "❌ Wrong PIN")
                 time.sleep(1)
                 self.context.transition_to(UnblockState(self.context))
 
     def exit(self):
-        self.context.tft.clear()
+        self.context.screen.clear()
 
 class PinEntryHelper:
-    def __init__(self, encoder, tft, prompt="Enter PIN"):
+    def __init__(self, encoder, screen, prompt="Enter PIN"):
         self.encoder = encoder
-        self.tft = tft
+        self.screen = screen
         self.prompt = prompt
         self.digits = [0, 0, 0, 0]
         self.index = 0
         self._done = False
         self.last_rendered = ""
 
-        self.tft.clear()
-        self.tft.write(self.prompt, x=10, y=30, identifier="pin_prompt")
-        self.tft.write("PIN: 0000", x=10, y=50, identifier="pin_view")
+        self.screen.clear()
+        self.screen.write(self.prompt, line=1, identifier="pin_prompt")
+        self.screen.write("PIN: 0000", line=2, identifier="pin_view")
 
     def update(self):
         if self._done:
@@ -92,7 +92,7 @@ class PinEntryHelper:
 
         pin_str = ''.join(str(d) for d in self.digits)
         if direction in ("CW", "CCW") and pin_str != self.last_rendered:
-            self.tft.update("pin_view", f"PIN: {pin_str}")
+            self.screen.update("pin_view", f"PIN: {pin_str}")
             self.last_rendered = pin_str
 
         if self.encoder.was_pressed():
@@ -110,55 +110,81 @@ class PinEntryHelper:
 
 class AutoState(BaseState):
     def enter(self):
-        self.context.tft.clear()
-        self.context.tft.write("Send Command O.o ...", x=10, y=10, identifier="auto_view")
-        if not self.context.processor.authenticated:
-            self.context.tft.write("Not Authenticated", x=10, y=50, identifier="waiting_view")
-        else:
-            self.context.tft.write("Authenticated! >:)", x=10, y=50, identifier="waiting_view")
+        self.context.screen.clear()
+        self.context.screen.write("Send Command...", line=1, identifier="auto_view")
         self.context.usb.write("\U0001F4E5 Ready to receive commands over USB Serial...\n")
 
     def handle(self):
         command = self.context.usb.read(echo=False)
+
         if command:
-            if not self.context.processor.authenticated and command.startswith("auth "):
-                if self.context.processor.execute(command):
-                    self.context.tft.update("waiting_view", "Authenticated! :)")
-                return
-            #if self.context.processor.authenticated:
-            if self.context.authenticator.f_authenticated:
-                self.context.processor.execute(command)
+            self.context.screen.update("auto_view", f"Recieved {command}")
+            self.execute_with_retry(command)
 
         if self.context.encoder.was_pressed():
             self.context.transition_to(MenuState(self.context))
         
-        if self.context.fingerprint.finger_irq():
-            print("👆 Finger is on the sensor")
-            self.context.authenticator.authenticate()
-            if self.context.fingerprint.authenticated:
-                self.context.tft.update("waiting_view", "Authenticated! :)")
-
-
     def exit(self):
         pass
+
+    def execute_with_retry(self, command):
+        """
+        Securely attempts fingerprint authentication up to 3 times.
+        If successful at any attempt, the command is executed.
+        If it fails 3 times, the command is dropped securely.
+        """
+        MAX_ATTEMPTS = 3
+        attempts = 0
+
+        # Write the initial state
+        self.context.screen.write("Waiting for Authentication...", line=1, identifier="waiting_view")
+        self.context.screen.write(f"Attempt {attempts + 1} of {MAX_ATTEMPTS}", line=2, identifier="attempts")
+
+        # Save the state of the screen before trying authentication
+        state = self.context.screen.save_state()
+        #print("State saved:", state)
+        while attempts < MAX_ATTEMPTS:
+            # Display the current attempt
+            self.context.screen.update("attempts", f"Attempt {attempts + 1} of {MAX_ATTEMPTS}")
+
+            if self.context.authenticator.authenticate():
+                # Restore the screen to the initial state
+                self.context.screen.restore_state(state)
+                # Update directly without checking
+                self.context.screen.update("waiting_view", "Authenticated! :)")
+                self.context.processor.execute(command)
+                return  # Exit after successful authentication
+            else:
+                # Restore the original state if it fails
+                self.context.screen.restore_state(state)
+                attempts += 1
+                # Direct update without checking
+                self.context.screen.update("attempts", f"Failed attempt {attempts}")
+
+        # If we reach here, all attempts failed
+        #self.context.screen.restore_state(state)
+        self.context.screen.update("waiting_view", "Access Denied")
+        self.context.screen.update("attempts", "Maximum attempts reached.")
+        print("❌ Command dropped due to failed authentication.")
+
 
 class MenuState(BaseState):
     def enter(self):
         self.draw_menu()
 
     def draw_menu(self):
-        self.context.tft.clear()
-        self.context.tft.write("Menu:", x=10, y=10, identifier="menu_title")
-        self.context.tft.write(self.context.menu_modes[self.context.menu_index], x=10, y=30, identifier="menu_item")
+        self.context.screen.clear()
+        self.context.screen.write("Menu:", line=1, identifier="menu_title")
+        self.context.screen.write(self.context.menu_modes[self.context.menu_index], line=2, identifier="menu_item")
 
     def handle(self):
         direction = self.context.encoder.get_direction()
         if direction == "CW":
             self.context.menu_index = (self.context.menu_index + 1) % len(self.context.menu_modes)
-            self.context.tft.update("menu_item", self.context.menu_modes[self.context.menu_index])
+            self.context.screen.update("menu_item", self.context.menu_modes[self.context.menu_index])
         elif direction == "CCW":
             self.context.menu_index = (self.context.menu_index - 1) % len(self.context.menu_modes)
-            self.context.tft.update("menu_item", self.context.menu_modes[self.context.menu_index])
+            self.context.screen.update("menu_item", self.context.menu_modes[self.context.menu_index])
         
         if self.context.encoder.was_pressed():
             if self.context.menu_modes[self.context.menu_index] == "Manual Mode":
@@ -175,13 +201,13 @@ class MenuState(BaseState):
 
 class AuthState(BaseState):
     def enter(self):
-        self.context.tft.clear()
-        self.context.tft.write("Authenticate with key", x=10, y=20, identifier="auth")
+        self.context.screen.clear()
+        self.context.screen.write("Authenticate with key", line=1, identifier="auth")
         self.context.usb.write("Waiting for authentication...")
 
     def handle(self):
         if self.context.authenticator.f_authenticated:
-                self.context.tft.write("\u2705 Auth OK", x=10, y=50, identifier="status")
+                self.context.screen.write("\u2705 Auth OK", line=2, identifier="status")
                 self.context.usb.write("✅ Authentication successful!")
                 self.context.transition_to(LoginState(self.context))
 
@@ -198,15 +224,15 @@ class LoginState(BaseState):
         self.draw_login_screen()
 
     def draw_login_screen(self):
-        self.context.tft.clear()
-        self.context.tft.write("Login Page", x=10, y=20, identifier="login")
+        self.context.screen.clear()
+        self.context.screen.write("Login Page",line=1, identifier="login")
         if self.context.authenticator.authenticated:
             try:
                 vault = self.context.authenticator.get_vault()
                 domain = list(vault.db.keys())[self.context.login_index]
-                self.context.tft.write(domain, x=10, y=50, identifier="domain")
+                self.context.screen.write(domain, line=2, identifier="domain")
             except (PermissionError, IndexError):
-                self.context.tft.write("🔒 No credentials", x=10, y=50, identifier="domain")
+                self.context.screen.write("🔒 No credentials", line=2, identifier="domain")
 
     def handle(self):
         direction = self.context.encoder.get_direction()
@@ -224,10 +250,10 @@ class LoginState(BaseState):
 
         if direction == "CW":
             self.context.login_index = (self.context.login_index + 1) % len(vault_keys)
-            self.context.tft.update("domain", vault_keys[self.context.login_index])
+            self.context.screen.update("domain", vault_keys[self.context.login_index])
         elif direction == "CCW":
             self.context.login_index = (self.context.login_index - 1) % len(vault_keys)
-            self.context.tft.update("domain", vault_keys[self.context.login_index])
+            self.context.screen.update("domain", vault_keys[self.context.login_index])
 
         if self.context.encoder.was_pressed():
             domain = vault_keys[self.context.login_index]
@@ -252,18 +278,18 @@ class PassLengthState(BaseState):
         self.draw_pass_length()
 
     def draw_pass_length(self):
-        self.context.tft.clear()
-        self.context.tft.write("Length:", x=10, y=10, identifier="pass_title")
-        self.context.tft.write(str(self.context.password_length), x=10, y=30, identifier="pass_len")
+        self.context.screen.clear()
+        self.context.screen.write("Length:", line=1, identifier="pass_title")
+        self.context.screen.write(str(self.context.password_length), line=2, identifier="pass_len")
 
     def handle(self):
         direction = self.context.encoder.get_direction()
         if direction == "CW" and self.context.password_length < 30:
             self.context.password_length += 1
-            self.context.tft.update("pass_len", str(self.context.password_length))
+            self.context.screen.update("pass_len", str(self.context.password_length))
         elif direction == "CCW" and self.context.password_length > 8:
             self.context.password_length -= 1
-            self.context.tft.update("pass_len", str(self.context.password_length))
+            self.context.screen.update("pass_len", str(self.context.password_length))
         if self.context.encoder.was_pressed():
             self.context.transition_to(PassComplexState(self.context))
         elif self.context.encoder.rtr_was_pressed():
@@ -279,19 +305,19 @@ class PassComplexState(BaseState):
         self.draw_complexity()
 
     def draw_complexity(self):
-        self.context.tft.clear()
-        self.context.tft.write("Complexity:", x=10, y=10, identifier="complex_title")
-        self.context.tft.write(self.COMPLEXITY_LEVELS[self.context.complexity_index],
-                                 x=10, y=30, identifier="complex_level")
+        self.context.screen.clear()
+        self.context.screen.write("Complexity:", line=1, identifier="complex_title")
+        self.context.screen.write(self.COMPLEXITY_LEVELS[self.context.complexity_index],
+                                 line=2, identifier="complex_level")
 
     def handle(self):
         direction = self.context.encoder.get_direction()
         if direction == "CW":
             self.context.complexity_index = (self.context.complexity_index + 1) % len(self.COMPLEXITY_LEVELS)
-            self.context.tft.update("complex_level", self.COMPLEXITY_LEVELS[self.context.complexity_index])
+            self.context.screen.update("complex_level", self.COMPLEXITY_LEVELS[self.context.complexity_index])
         elif direction == "CCW":
             self.context.complexity_index = (self.context.complexity_index - 1) % len(self.COMPLEXITY_LEVELS)
-            self.context.tft.update("complex_level", self.COMPLEXITY_LEVELS[self.context.complexity_index])
+            self.context.screen.update("complex_level", self.COMPLEXITY_LEVELS[self.context.complexity_index])
         if self.context.encoder.was_pressed():
             self.context.password_generated = generate_password(self.context.password_length,
                                                                   self.context.complexity_index)
@@ -308,15 +334,15 @@ class PassSaveState(BaseState):
         self.draw_save_prompt()
 
     def draw_save_prompt(self):
-        self.context.tft.clear()
-        self.context.tft.write("Save password?", x=10, y=10, identifier="save_title")
-        self.context.tft.write(self.context.save_decision[self.context.save_index], x=10, y=30, identifier="save_option")
+        self.context.screen.clear()
+        self.context.screen.write("Save password?",line=1, identifier="save_title")
+        self.context.screen.write(self.context.save_decision[self.context.save_index], line=2, identifier="save_option")
 
     def handle(self):
         direction = self.context.encoder.get_direction()
         if direction in ("CW", "CCW"):
             self.context.save_index = 1 - self.context.save_index
-            self.context.tft.update("save_option", self.context.save_decision[self.context.save_index])
+            self.context.screen.update("save_option", self.context.save_decision[self.context.save_index])
         if self.context.encoder.was_pressed():
             if self.context.save_decision[self.context.save_index] == "Yes":
                 self.context.transition_to(DomainEntryState(self.context))
@@ -330,8 +356,8 @@ class PassSaveState(BaseState):
 
 class DomainEntryState(BaseState):
     def enter(self):
-        self.context.tft.clear()
-        self.context.tft.write("Authenticate to Save", x=10, y=20, identifier="auth")
+        self.context.screen.clear()
+        self.context.screen.write("Authenticate to Save", line=1, identifier="auth")
         self.context.usb.write("Waiting for authentication...")
         self.authenticated = False
 
@@ -343,7 +369,7 @@ class DomainEntryState(BaseState):
             return
 
         if self.context.processor.authenticated and not self.authenticated:
-            self.context.tft.write("\u2705 Auth OK", x=10, y=50, identifier="status")
+            self.context.screen.write("\u2705 Auth OK", line=2, identifier="status")
             self.context.usb.write("Authenticated. Please send domain and username in the format: <domain> <username>")
             self.authenticated = True
             return
@@ -354,7 +380,7 @@ class DomainEntryState(BaseState):
                 new_domain, user = credentials.split(" ", 1)
                 self.context.processor.vault.add(new_domain.strip(), user.strip(), self.context.password_generated)
                 self.context.usb.write(f"✅ Password saved for {new_domain.strip()}\n")
-                self.context.tft.write(f"Password saved for {new_domain.strip()}", x=10, y=70, identifier="save_status")
+                self.context.screen.write(f"Password saved for {new_domain.strip()}", line=2, identifier="save_status")
                 self.context.transition_to(AutoState(self.context))
             except Exception as e:
                 self.context.usb.write(f"❌ Failed to save credentials: {e}\n")
@@ -364,9 +390,9 @@ class DomainEntryState(BaseState):
 
 class SettingsState(BaseState):
     def enter(self):
-        self.context.tft.clear()
-        self.context.tft.write("Settings", x=10, y=10, identifier="settings_title")
-        self.context.tft.write(self.context.settings_list[self.context.settings_index], x=10, y=30, identifier="settings_item")
+        self.context.screen.clear()
+        self.context.screen.write("Settings", line=1, identifier="settings_title")
+        self.context.screen.write(self.context.settings_list[self.context.settings_index], line=2, identifier="settings_item")
 
         self.mode = "menu"
         self.pin_helper = None
@@ -386,15 +412,15 @@ class SettingsState(BaseState):
 
         if direction == "CW":
             self.context.settings_index = (self.context.settings_index + 1) % len(self.context.settings_list)
-            self.context.tft.update("settings_item", self.context.settings_list[self.context.settings_index])
+            self.context.screen.update("settings_item", self.context.settings_list[self.context.settings_index])
         elif direction == "CCW":
             self.context.settings_index = (self.context.settings_index - 1) % len(self.context.settings_list)
-            self.context.tft.update("settings_item", self.context.settings_list[self.context.settings_index])
+            self.context.screen.update("settings_item", self.context.settings_list[self.context.settings_index])
 
         if self.context.encoder.was_pressed():
             selected = self.context.settings_list[self.context.settings_index]
             if selected == "Change PIN":
-                self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="Enter Admin PIN")
+                self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
                 self.mode = "verify_old"
             elif selected == "Update Fingerprints":
                 self.update_finger()
@@ -404,10 +430,10 @@ class SettingsState(BaseState):
         if self.pin_helper.is_done():
             pin = self.pin_helper.get_pin()
             if self.context.authenticator.verify_pin(pin):
-                self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="New PIN")
+                self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="New PIN")
                 self.mode = "enter_new"
             else:
-                self.context.tft.update("pin_view", "❌ Wrong PIN")
+                self.context.screen.update("pin_view", "❌ Wrong PIN")
                 time.sleep(1)
                 self.context.transition_to(SettingsState(self.context))
     
@@ -416,7 +442,7 @@ class SettingsState(BaseState):
         if self.pin_helper.is_done():
             new_pin = self.pin_helper.get_pin()
             self.context.authenticator.set_pin(new_pin)
-            self.context.tft.write("✅ PIN updated!", x=10, y=80, identifier="done")
+            self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
             time.sleep(1)
             self.context.transition_to(SettingsState(self.context))
 
@@ -427,10 +453,10 @@ class SettingsState(BaseState):
     #     direction = self.context.encoder.get_direction()
     #     if direction == "CW":
     #         self.context.settings_index = (self.context.settings_index + 1) % 2
-    #         self.context.tft.update("settings_item", self.context.settings_list[self.context.settings_index])
+    #         self.context.screen.update("settings_item", self.context.settings_list[self.context.settings_index])
     #     elif direction == "CCW":
     #         self.context.settings_index = (self.context.settings_index - 1) % 2
-    #         self.context.tft.update("settings_item", self.context.settings_list[self.context.settings_index])
+    #         self.context.screen.update("settings_item", self.context.settings_list[self.context.settings_index])
 
     #     if self.context.encoder.was_pressed():
     #         if self.context.settings_list[self.context.settings_index] == "Change PIN":
@@ -445,16 +471,16 @@ class SettingsState(BaseState):
     # def change_pin(self):
     #     # Placeholder for changing the PIN
     #       # Example PIN check
-    #     self.pin_helper = PinEntryHelper(self.context.encoder, self.context.tft, prompt="Enter Admin PIN")
+    #     self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
     #     self.pin_helper.update()
 
     #     if self.pin_helper.is_done():
     #         pin = self.pin_helper.get_pin()
     #         if self.context.authenticator.verify_pin(pin):
-    #             self.context.tft.write("Enter new PIN:", x=10, y=50, identifier="new_pin")
+    #             self.context.screen.write("Enter new PIN:", line=2, identifier="new_pin")
     #             new_pin = self._prompt_pin()
     #             self.context.authenticator.set_pin(new_pin)
-    #             self.context.tft.write("PIN updated!", x=10, y=70, identifier="pin_update")
+    #             self.context.screen.write("PIN updated!",line=2, identifier="pin_update")
 
     def exit(self):
         pass
