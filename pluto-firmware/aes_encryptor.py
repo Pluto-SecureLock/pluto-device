@@ -55,3 +55,48 @@ def decrypt_aes_cbc(base64_input, key_string):
         return unpadded.decode("utf-8")
     except Exception:
         return "[ERROR] Invalid padding or decoding"
+
+def encrypt_aes_cbc_bytes(plaintext: str, key: bytes) -> str:
+    """
+    Encrypts the given plaintext using AES-CBC with the given binary key.
+    Returns a base64-encoded string of IV + ciphertext.
+    """
+    key = (key + b"\x00" * BLOCK_SIZE)[:BLOCK_SIZE]  # Pad/truncate to 16 bytes
+
+    iv = os.urandom(BLOCK_SIZE)
+    padded = pad(plaintext.encode("utf-8"))
+    encrypted = bytearray(len(padded))
+
+    cipher = aesio.AES(key, aesio.MODE_CBC, IV=iv)
+    cipher.encrypt_into(padded, encrypted)
+
+    result = iv + encrypted
+    return binascii.b2a_base64(result).decode("utf-8").strip()
+
+def decrypt_aes_cbc_bytes(base64_input: str, key: bytes) -> str:
+    """
+    Decrypts the base64 input string using AES-CBC and the given binary key.
+    Returns the plaintext as a UTF-8 string.
+    """
+    key = (key + b"\x00" * BLOCK_SIZE)[:BLOCK_SIZE]
+
+    try:
+        encrypted_data = binascii.a2b_base64(base64_input)
+    except Exception:
+        return "[ERROR] Invalid base64"
+
+    if len(encrypted_data) < BLOCK_SIZE:
+        return "[ERROR] Data too short"
+
+    iv = encrypted_data[:BLOCK_SIZE]
+    ciphertext = encrypted_data[BLOCK_SIZE:]
+    decrypted = bytearray(len(ciphertext))
+
+    cipher = aesio.AES(key, aesio.MODE_CBC, IV=iv)
+    cipher.decrypt_into(ciphertext, decrypted)
+
+    try:
+        unpadded = unpad(decrypted)
+        return unpadded.decode("utf-8")
+    except Exception:
+        return "[ERROR] Invalid padding or decoding"

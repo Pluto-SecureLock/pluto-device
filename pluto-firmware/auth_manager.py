@@ -3,8 +3,11 @@ import json
 import binascii
 import adafruit_hashlib as hashlib
 from key_store import KeyStore
+import circuitpython_hmac as hmac
 
 AUTH_FILE = "sd/auth.db"
+SECRET_FILE = "sd/secret.db"
+
 SYS_PARAM_FILE = "sd/systemparam_finger.json"
 SALT_SIZE = 16  # 128-bit salt
 
@@ -28,6 +31,28 @@ class AuthManager:
         hashed = hashlib.sha256(combined).digest()
         return binascii.hexlify(hashed).decode("utf-8")
 
+    def _hkdf_extract(self,salt: bytes, input_key_material: bytes) -> bytes:
+        """HKDF-Extract step (RFC 5869)"""
+        if not salt:
+            salt = bytes([0] * hashlib.sha256().digest_size)
+        return hmac.new(salt, input_key_material, hashlib.sha256).digest()
+     
+    def _hkdf_expand(self, prk: bytes, info: bytes, length: int) -> bytes:
+        """HKDF-Expand step (RFC 5869)"""
+        hash_len = hashlib.sha256().digest_size
+        blocks = []
+        output = b""
+        block = b""
+        for counter in range(1, -(-length // hash_len) + 1):  # ceil(length/hash_len)
+            block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
+            blocks.append(block)
+        return b"".join(blocks)[:length]
+
+    def _derive_key_from_template(self,template: bytes, salt: bytes = b"", info: bytes = b"fingerprint-key", length: int = 32) -> bytes:
+        """Derive AES key from fingerprint template using HKDF (CircuitPython version)"""
+        prk = self._hkdf_extract(salt, template)
+        return self._hkdf_expand(prk, info, length)
+           
     def _save_credentials(self, salt: bytes, hashed_password: str, path: str):
         data = {
             "salt": binascii.hexlify(salt).decode("utf-8"),
@@ -90,12 +115,11 @@ class AuthManager:
 
     def _reset_authentication(self):
         self._authenticated = False
-
+    
     def _reset_f_authentication(self):
         self._f_authenticated = False
 
-    def is_registered(self, ) -> bool:
-        path = AUTH_FILE
+    def is_registered(self, path = AUTH_FILE) -> bool:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
@@ -123,24 +147,56 @@ class AuthManager:
         else:
             print("❌ System parameter hash mismatch — possible tampering or change")
             return False
-
-    def authenticate(self) -> bool:
-        if not self.fingerprint:
-            raise RuntimeError("No fingerprint sensor attached.")
-        self._reset_f_authentication()
-
-        master_key = "ALOJHOMORE24"
-
-        self.fingerprint.authenticate()
-        if self.fingerprint.authenticated:
-            self._f_authenticated = True
-            if master_key:
-                self._master_key = master_key
-                self._vault = KeyStore(self._master_key)
-            return True
+        
+    def set_master_key(self):
+        if not self.is_registered(SECRET_FILE):
+            template = self.fingerprint.get_template()
+            salt = self.generate_salt()
+            aes_key = self._derive_key_from_template(template, salt)
+            try :
+                self._save_credentials(salt, binascii.hexlify(aes_key).decode("utf-8"), KEY_FILE)
+                return True
+            except Exception as e:
+                print(f"❌ Error saving master key: {e}")
         return False
     
+    def authenticate(self) -> bool:
+        """Attempts to authenticate via fingerprint sensor and load master key into vault."""
+        if not self.fingerprint:
+            raise RuntimeError("No fingerprint sensor attached.")
+
+        self._reset_f_authentication()
+        self.fingerprint.authenticate()
+
+        if not self.fingerprint.authenticated:
+            return False
+
+        self._f_authenticated = True
+
+        master_key = self._retrieve_master_key()
+        if master_key:
+            self._master_key = master_key
+            self._vault = KeyStore(master_key)
+            return True
+
+        return False
+
+    def _retrieve_master_key(self, path: str = SECRET_FILE):
+        _ , key = self._load_credentials(path)
+        key = bytes.fromhex(key)
+        print(f"🔑 Master key retrieved: {key}")
+        return key
+
     def get_vault(self):
         if not self._f_authenticated or not self._vault:
             raise PermissionError("🔒 Not authenticated or vault not loaded.")
         return self._vault
+    
+    def update_fingerprint(self, fingerprint_id):
+        if isinstance(fingerprint_id, int):
+            self._reset_f_authentication()
+            if self.authenticate():
+               return self.fingerprint.update(fingerprint_id)
+        else:
+            print("❌ Invalid fingerprint ID")
+        return False

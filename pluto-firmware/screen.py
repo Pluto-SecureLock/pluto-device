@@ -20,12 +20,12 @@ class Screen:
         # Create the display object
         self.display = SSD1306(display_bus, width=width, height=height)
         # Rotate the display 180 degrees
-        self.display.rotation = 180
+        self.display.rotation = 180  
         # Create a group to manage display content
         self.splash = displayio.Group()
         self.display.root_group = self.splash
 
-        # Dictionary to store text labels
+        # Dictionary to store text dlabels
         self.text_labels = {}
 
         # Mapping for line numbers to coordinates
@@ -82,7 +82,7 @@ class Screen:
             self.text_labels[identifier].text = new_text
         else:
             raise ValueError(f"No text label found with identifier '{identifier}'.")
-
+        
     def save_state(self):
         """
         Saves the current state of the screen labels.
@@ -92,7 +92,7 @@ class Screen:
         for identifier, text_label in self.text_labels.items():
             saved_state[identifier] = text_label
         return saved_state
-
+    
     def restore_state(self, saved_state):
         """
         Restores the screen to a previously saved state.
@@ -107,6 +107,7 @@ class Screen:
             else:
                 pass
 
+                
     def remove(self, identifier):
         """
         Removes the text label identified by 'identifier' from the display.
@@ -118,4 +119,4 @@ class Screen:
             self.splash.remove(text_area)
         else:
             raise ValueError(f"No text label found with identifier '{identifier}'.")
-
+""

@@ -4,7 +4,7 @@ from usb_serial import USBSerial
 from hid_output import HIDOutput
 from command_processor import CommandProcessor
 from finger_print import FingerprintAuthenticator
-from auth_manager import AuthManager
+from auth_manager import AuthManager, SECRET_FILE, AUTH_FILE
 from states import AutoState, UnblockState
 
 class ApplicationContext:
@@ -16,12 +16,14 @@ class ApplicationContext:
         self.processor = CommandProcessor(self.hid_output,self.usb,self.authenticator)
         self.encoder = RotaryEncoderWithButton()
         self.screen = Screen()
+        self.MASTER_KEY_FILE = SECRET_FILE
+        self.AUTH_FILE = AUTH_FILE
 
         # Application data / shared state
         self.password_length = 12
         self.complexity_index = 0
         self.settings_index = 0
-        self.settings_list = ["Change PIN", "Enroll Finger"]
+        self.settings_list = ["Change PIN", "Update Fingerprints"]
         self.password_generated = ""
         self.menu_modes = ["Manual Mode", "Suggest Strong Password","Settings"]
         self.menu_index = 0

@@ -1,7 +1,6 @@
 import board
 import rotaryio
 import digitalio
-import time
 
 class RotaryEncoderWithButton:
     def __init__(self, pin_clk=board.D5, pin_dt=board.D6, pin_sw=board.D9,pin_rtr=board.D7):

@@ -6,8 +6,10 @@ import json
 import digitalio
 from usb_serial import USBSerial
 
+MAX_SLOTS = 127                # sensor’s addressable slots (1-127)
+MAX_FINGERS = 2              # max number of fingerprints to store
 class FingerprintAuthenticator:
-    def __init__(self, max_fingers=2, pin=0000):
+    def __init__(self, max_fingers=MAX_FINGERS, pin=0000):
         self.screen = None
         self.usb = USBSerial()
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
@@ -18,6 +20,7 @@ class FingerprintAuthenticator:
         self._authenticated = False  # private variable
         self._last_irq_state = self.irq_pin.value  # track for edge detection
         self._verify_sensor()
+        self.finger.set_led(color=3, mode=1, speed=20, cycles=2)
 
     def attach_screen(self, screen):
         self.screen = screen
@@ -31,28 +34,54 @@ class FingerprintAuthenticator:
             raise RuntimeError("❌ Failed to ensure exactly two fingerprints.")
         time.sleep(1)
 
-    def _ensure_two_fingerprints(self,DEBUG=True) -> bool:
-        """Ensure that exactly 2 fingerprints are enrolled. Enroll if needed."""
-        if (self.finger.count_templates() != adafruit_fingerprint.OK) and (self.finger.template_count > 0):
-            print("❌ Failed to count templates.")
+    def _ensure_two_fingerprints(self, DEBUG=True) -> bool:
+        """
+        Make sure *exactly* two fingerprints are stored.
+        ─ If 0 or 1 are present → enroll into the first free slots.
+        ─ If 3-127 are present  → abort (or wipe, if you really want empty_library()).
+        Returns True on success, False on any failure.
+        """
+        # 1) Count how many templates exist right now
+        status = self.finger.count_templates()
+        if status != adafruit_fingerprint.OK:
+            if DEBUG: print("❌ count_templates() failed")
             return False
 
-        count = self.finger.template_count
-        if DEBUG: print(f"🧾 Current enrolled templates: {count}")
+        current = self.finger.template_count
+        if DEBUG: print(f"🧾 Templates present: {current}")
 
-        if count > 2:
-            if DEBUG: print("❌ Too many fingerprints enrolled. Only 2 allowed.")
-            self.finger.empty_library()
+        # 2) Bail (or wipe) if there are already too many
+        if current > MAX_FINGERS:
+            if DEBUG: print("❌ More than 2 prints stored – aborting")
+            # self.finger.empty_library()   # uncomment if you *want* to wipe
             return False
-        elif count < 2:
-            for slot in range(count + 1, 3):  # Enroll slots 1 and 2
-                if DEBUG: print(f"👉 Enrolling finger in slot {slot}...")
+
+        # 3) If we need to add 1 or 2 prints, find unused slots
+        if current < MAX_FINGERS:
+            # read_templates() gives us a list of occupied slot numbers
+            if self.finger.read_templates() != adafruit_fingerprint.OK:
+                if DEBUG: print("❌ read_templates() failed")
+                return False
+            occupied = set(self.finger.templates)
+
+            needed = MAX_FINGERS - current
+            for slot in range(1, MAX_SLOTS + 1):
+                if slot in occupied:
+                    continue                      # slot already used
+                if DEBUG: print(f"👉 Enrolling into free slot {slot} …")
                 if not self.enroll(slot):
-                    if DEBUG: print(f"❌ Enrollment failed at slot {slot}")
+                    if DEBUG: print(f"❌ Enrollment failed in slot {slot}")
                     return False
-                time.sleep(0.5)
+                needed -= 1
+                time.sleep(0.5)                  # small debounce
+                if needed == 0:
+                    break
 
-        if DEBUG: print("✅ Exactly 2 fingerprints enrolled.")
+            if needed:                           # ran out of free slots
+                if DEBUG: print("❌ Library is full – can’t reach exactly 2")
+                return False
+
+        if DEBUG: print("✅ Exactly 2 fingerprints stored")
         return True
 
     def _usb_input(self, prompt: str) -> str:
@@ -169,7 +198,7 @@ class FingerprintAuthenticator:
         self._authenticated = False
 
     def authenticate(self):
-
+        
         self._reset_authentication()  # Reset authentication status
 
         self._verify_sensor(True)
@@ -190,17 +219,17 @@ class FingerprintAuthenticator:
         if self.finger.finger_search() != adafruit_fingerprint.OK:
             print(" ❌ No match")
             self.screen.update(identifier="line1", new_text="NOT a match")
-            #self.finger.set_led(color=1, mode=2) # Flash red if fingerprint IS NOT a match
+            self.finger.set_led(color=1, mode=2, speed=60, cycles=2)  # Flash red if fingerprint IS NOT a match
             return None
 
         print(f"✅ Match: ID {self.finger.finger_id} (score {self.finger.confidence})")
         
         self.screen.update(identifier="line1", new_text=f"Match: ID {self.finger.finger_id} (score {self.finger.confidence})")
-
+        
         self._authenticated = True  # ✅ only change from here
         time.sleep(1)
-        #self.finger.set_led(color=3, mode=2) # Flash purple if fingerprint IS a match
-        self.screen.update(identifier="line1", new_text="") # Clear screen before returning
+        self.finger.set_led(color=2, mode=6, speed=30, cycles=2)  # Flash purple if fingerprint IS a match
+        self.screen.update(identifier="line1", new_text="")  # Clear screen before returning
         return self.finger.finger_id
 
     def delete(self, location: int):
@@ -212,9 +241,13 @@ class FingerprintAuthenticator:
             return False
 
     def update(self, location: int):
+        print(f"🔄 Updating slot {location}...")
         if self.delete(location):
             return self.enroll(location)
         return False
+
+    def get_template(self):
+        return self.finger.get_template(slot=1)
 
     # def menu_loop(self):
     #     def print_menu():

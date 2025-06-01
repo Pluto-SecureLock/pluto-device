@@ -29,14 +29,15 @@ class SetupState(BaseState):
         self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter your Admin PIN")
 
     def handle(self):
+        # Update any input from the encoder
         self.pin_helper.update()
 
         if self.pin_helper.is_done():
             new_pin = self.pin_helper.get_pin()
-
+            # Set the PIN in the authenticator
             self.context.authenticator.set_pin(new_pin)
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
-            time.sleep(1)
+            time.sleep(0.5)
             self.context.transition_to(AutoState(self.context))
 
     def exit(self):
@@ -56,7 +57,11 @@ class UnblockState(BaseState):
             pin = self.pin_helper.get_pin()
 
             if self.context.authenticator.verify_pin(pin):
+                # Initialize the fingerprint authenticator
                 self.context.initialize_fingerprint(pin)
+                # Verify master key
+                self.context.authenticator.set_master_key()
+                # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:
                 self.context.screen.update("pin_view", "❌ Wrong PIN")
@@ -119,11 +124,13 @@ class AutoState(BaseState):
 
         if command:
             self.context.screen.update("auto_view", f"Recieved {command}")
+            time.sleep(1)
             self.execute_with_retry(command)
-
+            self.context.transition_to(AutoState(self.context))
+            
         if self.context.encoder.was_pressed():
             self.context.transition_to(MenuState(self.context))
-        
+
     def exit(self):
         pass
 
@@ -135,7 +142,7 @@ class AutoState(BaseState):
         """
         MAX_ATTEMPTS = 3
         attempts = 0
-
+        self.context.screen.clear()
         # Write the initial state
         self.context.screen.write("Waiting for Authentication...", line=1, identifier="waiting_view")
         self.context.screen.write(f"Attempt {attempts + 1} of {MAX_ATTEMPTS}", line=2, identifier="attempts")
@@ -162,7 +169,6 @@ class AutoState(BaseState):
                 self.context.screen.update("attempts", f"Failed attempt {attempts}")
 
         # If we reach here, all attempts failed
-        #self.context.screen.restore_state(state)
         self.context.screen.update("waiting_view", "Access Denied")
         self.context.screen.update("attempts", "Maximum attempts reached.")
         print("❌ Command dropped due to failed authentication.")
@@ -206,15 +212,10 @@ class AuthState(BaseState):
         self.context.usb.write("Waiting for authentication...")
 
     def handle(self):
-        if self.context.authenticator.f_authenticated:
-                self.context.screen.write("\u2705 Auth OK", line=2, identifier="status")
-                self.context.usb.write("✅ Authentication successful!")
-                self.context.transition_to(LoginState(self.context))
-
-        else:
-            if self.context.fingerprint.finger_irq():
-                print("👆 Finger is on the sensor")
-                self.context.authenticator.authenticate()
+        if self.context.authenticator.authenticate():
+            self.context.screen.write("\u2705 Auth OK", line=2, identifier="status")
+            self.context.usb.write("✅ Authentication successful!")
+            self.context.transition_to(LoginState(self.context))
 
     def exit(self):
         pass
@@ -400,7 +401,8 @@ class SettingsState(BaseState):
         self.mode_handlers = {
             "menu": self.handle_menu,
             "verify_old": self.handle_verify_old_pin,
-            "enter_new": self.handle_enter_new_pin
+            "enter_new": self.handle_enter_new_pin,
+            "update_finger": self.handle_update_finger
         }
 
     def handle(self):
@@ -408,6 +410,9 @@ class SettingsState(BaseState):
             self.mode_handlers[self.mode]()
 
     def handle_menu(self):
+        """
+        Handle navigation in the main settings menu.
+        """
         direction = self.context.encoder.get_direction()
 
         if direction == "CW":
@@ -423,9 +428,19 @@ class SettingsState(BaseState):
                 self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
                 self.mode = "verify_old"
             elif selected == "Update Fingerprints":
-                self.update_finger()
+                self.context.screen.clear()
+                self.context.screen.write("Select Fingerprint:", line=1, identifier="finger_id")
+                self.finger_options = ["Fingerprint 1", "Fingerprint 2"]
+                self.current_finger = 0
+                self.context.screen.update("finger_id", self.finger_options[self.current_finger])
+                self.mode = "update_finger"
+        elif self.context.encoder.rtr_was_pressed():
+            self.context.transition_to(MenuState(self.context))
 
     def handle_verify_old_pin(self):
+        """
+        Handle PIN verification for PIN change.
+        """
         self.pin_helper.update()
         if self.pin_helper.is_done():
             pin = self.pin_helper.get_pin()
@@ -438,49 +453,47 @@ class SettingsState(BaseState):
                 self.context.transition_to(SettingsState(self.context))
     
     def handle_enter_new_pin(self):
+        """
+        Handle entering the new PIN after verification.
+        """
         self.pin_helper.update()
         if self.pin_helper.is_done():
             new_pin = self.pin_helper.get_pin()
             self.context.authenticator.set_pin(new_pin)
+            self.context.screen.clear()
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
             time.sleep(1)
             self.context.transition_to(SettingsState(self.context))
 
+    def handle_update_finger(self):
+        """
+        Handle the selection and updating of fingerprints.
+        """
+        direction = self.context.encoder.get_direction()
 
+        # Mover entre Fingerprint 1 y Fingerprint 2
+        if direction == "CW":
+            self.current_finger = (self.current_finger + 1) % len(self.finger_options)
+        elif direction == "CCW":
+            self.current_finger = (self.current_finger - 1) % len(self.finger_options)
 
+        # Actualizar en pantalla el valor seleccionado
+        self.context.screen.update("finger_id", self.finger_options[self.current_finger])
 
-    # def handle(self):
-    #     direction = self.context.encoder.get_direction()
-    #     if direction == "CW":
-    #         self.context.settings_index = (self.context.settings_index + 1) % 2
-    #         self.context.screen.update("settings_item", self.context.settings_list[self.context.settings_index])
-    #     elif direction == "CCW":
-    #         self.context.settings_index = (self.context.settings_index - 1) % 2
-    #         self.context.screen.update("settings_item", self.context.settings_list[self.context.settings_index])
+        if self.context.encoder.was_pressed():
+            finger_id = self.current_finger + 1  # Convert to 1-based index
+            self.context.screen.clear()
+            self.context.screen.write(f"Updating Fingerprint {finger_id}...", line=2, identifier="enroll_finger")
+            
+            if self.context.authenticator.update_fingerprint(finger_id):
+                self.context.screen.write(f"{finger_id} updated successfully!", line=2, identifier="enroll_finger")
+            else:
+                self.context.screen.write(f"{finger_id} update failed!", line=2, identifier="enroll_finger")
+            time.sleep(1)
+            self.context.transition_to(SettingsState(self.context))
 
-    #     if self.context.encoder.was_pressed():
-    #         if self.context.settings_list[self.context.settings_index] == "Change PIN":
-    #             self.change_pin()
-    #         elif self.context.settings_list[self.context.settings_index] == "Update Fingerprints":
-    #             self.update_finger()
-
-    def update_finger(self):
-        # Placeholder for enrolling a finger
-        pass
-
-    # def change_pin(self):
-    #     # Placeholder for changing the PIN
-    #       # Example PIN check
-    #     self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
-    #     self.pin_helper.update()
-
-    #     if self.pin_helper.is_done():
-    #         pin = self.pin_helper.get_pin()
-    #         if self.context.authenticator.verify_pin(pin):
-    #             self.context.screen.write("Enter new PIN:", line=2, identifier="new_pin")
-    #             new_pin = self._prompt_pin()
-    #             self.context.authenticator.set_pin(new_pin)
-    #             self.context.screen.write("PIN updated!",line=2, identifier="pin_update")
+        elif self.context.encoder.rtr_was_pressed():
+            self.context.transition_to(SettingsState(self.context))
 
     def exit(self):
         pass
