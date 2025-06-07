@@ -1,70 +1,81 @@
-from aes_encryptor import encrypt_aes_cbc_bytes, decrypt_aes_cbc_bytes
+from aes_encryptor import encrypt_aes_cbc, decrypt_aes_cbc, encrypt_aes_cbc_bytes
 #from key_store import KeyStore
 import time
 
 DELAY = 0.0
+DEBUG_MODE = False
 
 class CommandProcessor:
     def __init__(self, hid_output, usb_output, authenticator):
         self.hid = hid_output
         self.usb = usb_output
         self.authenticator = authenticator
+        self.authenticated = False
         self.master_key = None
         self.vault = None
+
+
+    def secure_write(self, plaintext):
+        try: 
+            session_key = "f3d1c97a8b4e234c2d10ab51f9c76aee"
+            encrypted = encrypt_aes_cbc(str(plaintext) , key_string= session_key) 
+            self.usb.write(encrypted)
+
+            return True
+        except Exception as e:
+            self.usb.write(f"Error: During secure writing: {e}\n")
+
+            return False
         
 
+    def secure_read(self, command):
+        session_key = "f3d1c97a8b4e234c2d10ab51f9c76aee"
+        try: 
+            if(DEBUG_MODE):
+                return command.strip()
+            else:
+                decrypted_command = decrypt_aes_cbc(str(command) , key_string= session_key) 
+                decrypted_command.strip()
+                return decrypted_command
+        except Exception as e:
+            self.usb.write(f"Error: During secure writing: {e}\n")
+            return None
+
+
+
     def execute(self, command):
-        command = command.strip()
+
+        command = self.secure_read(command)
         print(f"Executing command: '{command}'")
-
+        # self.usb.write(f"Executing command: '{command}'\n")
+        
         if command.startswith("encrypt "):
-            try:
-                # Remove the prefix
-                _, raw = command.split(" ", 1)
-                
-                # Split into key and payload
-                key_str, payload = raw.strip().split(":", 1)
-                
-                # Convert key string to bytes (assuming it's hex)
-                key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
-
-                # Encrypt using the provided key
-                encrypted = encrypt_aes_cbc_bytes(plaintext=payload, key=key_bytes)
-
-                print("🔐 Encrypted (base64):", encrypted)
-
-            except ValueError:
-                print("❌ Error: Expected format 'encrypt key:<hexkey> <payload>'")
-            except Exception as e:
-                print(f"❌ Encryption failed: {e}")
-
+            # if not self.authenticated:
+            #     print("🔒 Auth required before sending credentials.")
+            #     return
+            _, msg = command.split(" ", 1)
+            encrypted = encrypt_aes_cbc(msg, key_string="f3d1c97a8b4e234c2d10ab51f9c76aee")
+            self.usb.write(f"🔐 Encrypted (base64): {encrypted}")
 
         elif command.startswith("decrypt "):
-            try:
-                # Remove the prefix
-                _, raw = command.split(" ", 1)
-                
-                # Split into key and payload
-                key_str, payload = raw.strip().split(":", 1)
-                
-                # Convert key string to bytes (assuming it's hex)
-                key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
+            if not self.authenticated:
+                print("🔒 Auth required before sending credentials.")
+                return
+            _, b64 = command.split(" ", 1)
+            decrypted = decrypt_aes_cbc(b64, key_string=self.master_key)
+            print("🔓 Decrypted:", decrypted)
+            self.hid.type_text(decrypted, delay=0.2)
 
-                # Encrypt using the provided key
-                decrypted = decrypt_aes_cbc_bytes(base64_input=payload, key=key_bytes)
-
-                print("🔓 Decrypted:", decrypted)
-
-            except ValueError:
-                print("❌ Error: Expected format 'encrypt key:<hexkey> <payload>'")
-            except Exception as e:
-                print(f"❌ Encryption failed: {e}")
-                
         elif command.startswith("encrypt_save "):
             _, msg = command.split(" ", 1)
-            encrypted = encrypt_aes_cbc_bytes(msg, key_string=self.master_key)
+            encrypted = encrypt_aes_cbc(msg, key_string=self.master_key)
             
         elif command.startswith("type "):
+            #TODO : Check if authenticated with authenticator finger before accessing vault
+            # if not self.authenticator.f_authenticated:
+            #     self.usb.write("🔒 Auth required before accessing vault.\n")
+            #     return
+
             _, domain = command.split(" ", 1)
             domain = domain.strip()
             try:
@@ -73,8 +84,8 @@ class CommandProcessor:
                 if not creds:
                     self.usb.write("⚠️ Domain not found\n")
                     return
-                self.usb.write(f"🔑 Credentials for {domain}: {creds}\n")
-                time.sleep(1)
+                #self.usb.write(f"🔑 Credentials for {domain}: {creds}\n")
+                #time.sleep(1)
                 self.hid.type_text(creds["username"], delay=DELAY)
                 self.hid.key_strokes("TAB")
                 self.hid.type_text(creds["password"], delay=DELAY)
@@ -116,6 +127,11 @@ class CommandProcessor:
                 print(f"Error: {e}")
         
         elif command.startswith("get "):
+            #TODO : Check if authenticated with authenticator finger before accessing vault
+            # if not self.authenticator.f_authenticated:
+            #     self.usb.write("🔒 Auth required before accessing vault.\n")
+            #     return
+
             _, domain = command.split(" ", 1)
             domain = domain.strip()
             try:
@@ -124,14 +140,25 @@ class CommandProcessor:
                 if not creds:
                     self.usb.write("Error: Domain not found\n")
                     return
-                self.usb.write(f"{domain}: {creds}")
+                self.secure_write(f"{domain}: {creds}")
+                #self.usb.write(f"{domain}: {creds}")
             except Exception as e:
                 self.usb.write(f"Error: retrieving credentials: {e}\n")
+                #print(f"Error: {e}")
         
         elif command.startswith("showkeys"):
+            #TODO : Check if authenticated with authenticator finger before accessing vault
+            # if not self.authenticator.f_authenticated:
+            #     self.usb.write("🔒 Auth required before accessing vault.\n")
+            #     return
+
+             
             try:
                 vault = self.authenticator.get_vault()
-                self.usb.write(f"{list(vault.db.keys())}\n")
+
+                keys = list(vault.db.keys())
+                self.secure_write(keys)                
+                    
             except Exception as e:
                 self.usb.write(f"Error: retrieving credentials: {e}\n")
 
@@ -169,8 +196,5 @@ class CommandProcessor:
                 self.usb.write(f"✏️ Modified credentials for {domain}\n")
             except Exception as e:
                 self.usb.write(f"❌ Failed to modify credentials: {e}\n")
-
-        elif command.lower() == "help":
-            self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>")
         else:
             print(f"Unknown command: '{command}'")
