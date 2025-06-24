@@ -110,35 +110,34 @@ class CommandProcessor:
                 print(f"Error: {e}")
 
         elif command.startswith("add "):
+            """add amazon:https://amazon.com,alice,pa55,"shopping account"""
             try:
-                # Split by the first space to separate the command
+                # Extraer los datos desde el comando: site:url,username,password,note
                 raw_data = command[4:].strip()
-                
-                # Split by the first colon to separate domain and credentials
-                domain, credentials = raw_data.split(":", 1)
-                
-                # Further split the credentials into username and password
-                username, password = credentials.split(",", 1)
 
-                # Clean up spaces
-                domain = domain.strip()
-                username = username.strip()
-                password = password.strip()
+                # Separar por ":" para obtener el nombre del sitio y los valores
+                site, values = raw_data.split(":", 1)
 
-                # Prepare the data dictionary
-                data = {
-                    "username": username,
-                    "password": password
-                }
+                # Separar los valores por coma: url, username, password, note (nota es opcional)
+                parts = [part.strip() for part in values.split(",")]
 
-                # Update the vault
+                if len(parts) < 3:
+                    self.secure_write("❌ Missing required fields. Usage: add site:url,username,password[,note]\n")
+                    return
+
+                url = parts[0]
+                username = parts[1]
+                password = parts[2]
+                note = parts[3] if len(parts) > 3 else ""
+
+                # Añadir al vault
                 vault = self.authenticator.get_vault()
-                vault.db[domain] = data
-                vault.add(domain, username, password)
-                self.secure_write(f"✅ Added credentials for {domain}\n")
+                vault.add(site, url, username, password, note)
+                self.secure_write(f"✅ Added credentials for {site}\n")
 
             except Exception as e:
                 self.secure_write(f"❌ Failed to add credentials: {e}\n")
+
         
         elif command.startswith("get "):
             _, domain = command.split(" ", 1)

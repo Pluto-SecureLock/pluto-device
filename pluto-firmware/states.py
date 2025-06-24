@@ -26,7 +26,7 @@ class SetupState(BaseState):
 
         # PIN setup
         self.context.screen.write("🔑 Set 4-digit PIN",line=2)
-        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter your Admin PIN")
+        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter NEW Admin PIN")
 
     def handle(self):
         # Update any input from the encoder
@@ -35,8 +35,10 @@ class SetupState(BaseState):
         if self.pin_helper.is_done():
             new_pin = self.pin_helper.get_pin()
             # Set the PIN in the authenticator
+            self.context.initialize_fingerprint(0000)
             self.context.authenticator.set_pin(new_pin)
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
+            self.context.authenticator.set_master_key()
             time.sleep(0.5)
             self.context.transition_to(AutoState(self.context))
 
@@ -48,7 +50,8 @@ class UnblockState(BaseState):
         if not self.context.authenticator.is_registered():
             print("SET UP A NEW PIN")
             self.context.transition_to(SetupState(self.context))
-        self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
+        else:
+            self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
         
     def handle(self):
         self.pin_helper.update()
@@ -60,7 +63,7 @@ class UnblockState(BaseState):
                 # Initialize the fingerprint authenticator
                 self.context.initialize_fingerprint(pin)
                 # Verify master key
-                self.context.authenticator.set_master_key()
+                self.context.authenticator.get_master_key()
                 # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:
@@ -124,9 +127,7 @@ class AutoState(BaseState):
 
         if command:
             self.context.screen.update("auto_view", f"Recieved {command}")
-            #TODO: REMOVE THIS LINE
-            self.context.authenticator.get_master_key()  # Ensure master key is set before executing commands
-            time.sleep(1)
+            self.context.authenticator.set_master_key()  # Ensure master key is set before executing commands
             self.execute_with_retry(command)
             self.context.transition_to(AutoState(self.context))
             
@@ -234,7 +235,7 @@ class LoginState(BaseState):
                 vault = self.context.authenticator.get_vault()
                 domain = list(vault.db.keys())[self.context.login_index]
                 self.context.screen.write(domain, line=2, identifier="domain")
-            except (PermissionError, IndexError):
+            except Exception as e:
                 self.context.screen.write("🔒 No credentials", line=2, identifier="domain")
 
     def handle(self):
@@ -245,7 +246,7 @@ class LoginState(BaseState):
 
             vault = self.context.authenticator.get_vault()
             vault_keys = list(vault.db.keys())
-        except PermissionError:
+        except Exception as e:
             return
 
         if not vault_keys:
@@ -263,9 +264,10 @@ class LoginState(BaseState):
             creds = vault.get(domain)
             self.context.usb.write(f"\U0001F511 Credentials for {domain}: {creds}")
             if creds:
-                time.sleep(1)
+                time.sleep(0.5)
                 self.context.processor.hid.type_text(creds["username"], delay=0.0)
                 self.context.processor.hid.key_strokes("TAB")
+                time.sleep(0.1)
                 self.context.processor.hid.type_text(creds["password"], delay=0.0)
                 self.context.processor.hid.key_strokes("ENTER")
 
@@ -436,6 +438,17 @@ class SettingsState(BaseState):
                 self.current_finger = 0
                 self.context.screen.update("finger_id", self.finger_options[self.current_finger])
                 self.mode = "update_finger"
+            elif selected == "Factory Reset":
+                self.context.screen.clear()
+                self.context.screen.write("Factory Resetting...", line=2, identifier="reset")
+                time.sleep(1)
+                if self.context.authenticator.factory_reset():
+                    self.context.screen.write("✅ Factory reset complete!", line=2, identifier="reset_done")
+                    time.sleep(1)
+                    self.context.transition_to(SetupState(self.context))
+                else:
+                    self.context.transition_to(SettingsState(self.context))
+
         elif self.context.encoder.rtr_was_pressed():
             self.context.transition_to(MenuState(self.context))
 
@@ -473,24 +486,24 @@ class SettingsState(BaseState):
         """
         direction = self.context.encoder.get_direction()
 
-        # Mover entre Fingerprint 1 y Fingerprint 2
+        # Move between Fingerprint 1 and Fingerprint 2
         if direction == "CW":
             self.current_finger = (self.current_finger + 1) % len(self.finger_options)
         elif direction == "CCW":
             self.current_finger = (self.current_finger - 1) % len(self.finger_options)
 
-        # Actualizar en pantalla el valor seleccionado
+        # Update screen
         self.context.screen.update("finger_id", self.finger_options[self.current_finger])
 
         if self.context.encoder.was_pressed():
             finger_id = self.current_finger + 1  # Convert to 1-based index
             self.context.screen.clear()
-            self.context.screen.write(f"Updating Fingerprint {finger_id}...", line=2, identifier="enroll_finger")
+            self.context.screen.write(f"Updating FP {finger_id}...", line=2, identifier="enroll_finger")
             
             if self.context.authenticator.update_fingerprint(finger_id):
-                self.context.screen.write(f"{finger_id} updated successfully!", line=2, identifier="enroll_finger")
+                self.context.screen.write(f"FP {finger_id} updated!", line=2, identifier="enroll_finger")
             else:
-                self.context.screen.write(f"{finger_id} update failed!", line=2, identifier="enroll_finger")
+                self.context.screen.write(f"FP {finger_id} NOT updated!", line=2, identifier="enroll_finger")
             time.sleep(1)
             self.context.transition_to(SettingsState(self.context))
 

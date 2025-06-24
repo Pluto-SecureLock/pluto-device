@@ -11,7 +11,7 @@ class ApplicationContext:
     def __init__(self):
         self.usb = USBSerial()
         self.hid_output = HIDOutput()
-        self.fingerprint = None  # Delay initialization
+        self.fingerprint = None  # Delayed initialization
         self.authenticator = AuthManager()  # Accepts no fingerprint initially
         self.processor = CommandProcessor(self.hid_output,self.usb,self.authenticator)
         self.encoder = RotaryEncoderWithButton()
@@ -23,17 +23,15 @@ class ApplicationContext:
         self.password_length = 12
         self.complexity_index = 0
         self.settings_index = 0
-        self.settings_list = ["Change PIN", "Update Fingerprints"]
+        self.settings_list = ["Change PIN", "Update Fingerprints", "Factory Reset"]
         self.password_generated = ""
-        self.menu_modes = ["Manual Mode", "Suggest Strong Password","Settings"]
+        self.menu_modes = ["Manual Mode", "Suggest Strong Password", "Settings"]
         self.menu_index = 0
         self.save_decision = ["Yes", "No"]
         self.save_index = 0
         self.login_index = 0
 
         # Set the initial state
-        # self.current_state = AutoState(self)
-        # self.transition_to(AutoState(self))
         self.current_state = UnblockState(self)
         self.transition_to(UnblockState(self))
 
@@ -48,7 +46,6 @@ class ApplicationContext:
     
     def initialize_fingerprint(self, pin: int):
         if self.fingerprint is None:
-            self.fingerprint = FingerprintAuthenticator(pin=pin)
+            self.fingerprint = FingerprintAuthenticator(pin=pin,screen=self.screen)
             self.authenticator.attach_fingerprint(self.fingerprint)
-            self.fingerprint.attach_screen(self.screen)
 

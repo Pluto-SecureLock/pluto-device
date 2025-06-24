@@ -4,37 +4,34 @@ import busio
 import adafruit_fingerprint
 import json
 import digitalio
-from usb_serial import USBSerial
 
 MAX_SLOTS = 127                # sensor’s addressable slots (1-127)
 MAX_FINGERS = 2              # max number of fingerprints to store
+DEBUG = True
+
 class FingerprintAuthenticator:
-    def __init__(self, max_fingers=MAX_FINGERS, pin=0000):
-        self.screen = None
-        self.usb = USBSerial()
+    def __init__(self, max_fingers=MAX_FINGERS, pin=0000,screen=None):
+        self.screen = screen # Attach the screen if provided
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
         password_tuple = tuple(pin.to_bytes(4, 'big'))
         self.finger = adafruit_fingerprint.Adafruit_Fingerprint(self.uart, passwd=password_tuple)
         self.max_fingers = max_fingers
-        self.irq_pin = self._enable_irq()
+        #self.irq_pin = self._enable_irq()
         self._authenticated = False  # private variable
-        self._last_irq_state = self.irq_pin.value  # track for edge detection
+        #self._last_irq_state = self.irq_pin.value  # track for edge detection
         self._verify_sensor()
         self.finger.set_led(color=3, mode=1, speed=20, cycles=2)
-
-    def attach_screen(self, screen):
-        self.screen = screen
 
     def _verify_sensor(self,DEBUG=True):
         if DEBUG: print("🔋 Verifying sensor...")
         if self.finger.verify_password() != adafruit_fingerprint.OK:
             raise RuntimeError("❌ Failed to find sensor; check wiring/power!")
         if DEBUG: print("✅ Sensor verified")
-        if not self._ensure_two_fingerprints(DEBUG=DEBUG):
+        if not self._ensure_two_fingerprints():
             raise RuntimeError("❌ Failed to ensure exactly two fingerprints.")
         time.sleep(1)
 
-    def _ensure_two_fingerprints(self, DEBUG=True) -> bool:
+    def _ensure_two_fingerprints(self) -> bool:
         """
         Make sure *exactly* two fingerprints are stored.
         ─ If 0 or 1 are present → enroll into the first free slots.
@@ -84,44 +81,15 @@ class FingerprintAuthenticator:
         if DEBUG: print("✅ Exactly 2 fingerprints stored")
         return True
 
-    def _usb_input(self, prompt: str) -> str:
-        print(prompt, end="")
-        line = ""
-        while not line:
-            line = self.usb.read(echo=False) or ""
-            time.sleep(0.05)
-        return line
-
-    def _get_valid_id(self) -> int:
-        while True:
-            s = self._usb_input("Enter ID (1–2): ")
-            try:
-                n = int(s)
-                if 1 <= n <= self.max_fingers:
-                    return n
-            except ValueError:
-                pass
-
-    def _enable_irq(self):
-        self.irq_pin = digitalio.DigitalInOut(board.D2)
-        self.irq_pin.direction = digitalio.Direction.INPUT
-        self.irq_pin.pull = digitalio.Pull.UP  # most fingerprint sensors pull LOW when active
-        return self.irq_pin
+    # def _enable_irq(self):
+    #     self.irq_pin = digitalio.DigitalInOut(board.D2)
+    #     self.irq_pin.direction = digitalio.Direction.INPUT
+    #     self.irq_pin.pull = digitalio.Pull.UP  # most fingerprint sensors pull LOW when active
+    #     return self.irq_pin
     
     @property
     def authenticated(self):
         return self._authenticated
-    
-    def finger_irq(self):
-        # return not self.irq_pin.value  # LOW = finger present
-        current_state = self.irq_pin.value
-        triggered = self._last_irq_state and not current_state  # HIGH -> LOW transition
-        self._last_irq_state = current_state
-        if triggered:
-        #     # Optionally wait until released
-        #     while not self.irq_pin.value:
-        #         time.sleep(0.01)
-            return triggered
     
     def check_system_parameters(self) -> bool:
         self.finger.read_sysparam()
@@ -156,9 +124,14 @@ class FingerprintAuthenticator:
             return False
         
     def enroll(self, location: int) -> bool:
+        self.screen.clear()
+        self.screen.write("Creating fingerprint", line=1, identifier="line1")
+        self.screen.write(" ", line=2, identifier="line2")
         for pass_num in (1, 2):
-            prompt = "Place finger..." if pass_num == 1 else "Place same finger again..."
+            prompt = "Place finger..." if pass_num == 1 else "Place same finger..."
             print(prompt, end="")
+            self.screen.update(identifier="line2", new_text=prompt)
+            
             while True:
                 r = self.finger.get_image()
                 if r == adafruit_fingerprint.OK:
@@ -167,31 +140,45 @@ class FingerprintAuthenticator:
                 elif r == adafruit_fingerprint.NOFINGER:
                     time.sleep(0.5)
                 else:
-                    print(f" ⚠️ Error code {r}")
+                    error= f" ⚠️ Error code {r}"
+                    print(error)
+                    self.screen.update(identifier="line2", new_text=error)
                     return False
 
             print("⏳ Templating...", end="")
+            self.screen.update(identifier="line2", new_text="Templating...")
+
             if self.finger.image_2_tz(pass_num) != adafruit_fingerprint.OK:
                 print(" ❌")
+                self.screen.update(identifier="line2", new_text="Conversion failed")
                 return False
             print(" ✅")
 
             if pass_num == 1:
                 print("✋ Remove finger…")
+                self.screen.update(identifier="line2", new_text="Remove finger...")
                 while self.finger.get_image() != adafruit_fingerprint.NOFINGER:
                     time.sleep(0.5)
 
         print("🔧 Creating model...", end="")
+        self.screen.update(identifier="line2", new_text="Creating model...")
+        # Create the fingerprint model from the two templates
         if self.finger.create_model() != adafruit_fingerprint.OK:
             print(" ❌")
+            self.screen.update(identifier="line2", new_text="Model creation failed")
+            return False
+        print(" ✅")
+        self.screen.update(identifier="line2", new_text=f"Storing at {location}...")
+        print(f"💾 Storing at slot {location}...", end="")
+
+        if self.finger.store_model(location) != adafruit_fingerprint.OK:
+            print(" ❌")
+            self.screen.update(identifier="line2", new_text="Store failed")
             return False
         print(" ✅")
 
-        print(f"💾 Storing at slot {location}...", end="")
-        if self.finger.store_model(location) != adafruit_fingerprint.OK:
-            print(" ❌")
-            return False
-        print(" ✅")
+        self.screen.update(identifier="line1", new_text=f"Successfully created!")
+        self.screen.update(identifier="line2", new_text=f"")
         return True
 
     def _reset_authentication(self):
@@ -248,45 +235,6 @@ class FingerprintAuthenticator:
 
     def get_template(self):
         return self.finger.get_template(slot=1)
-
-    # def menu_loop(self):
-    #     def print_menu():
-    #         print("\n=== MENU ===")
-    #         print("(e) Enroll    (f) Authenticate    (u) Update    (d) Delete    (q) Quit")
-
-    #     print_menu()
-    #     while True:
-    #         choice = self._usb_input("> ").lower()
-
-    #         if choice == "e":
-    #             slot = self._get_valid_id()
-    #             if self.enroll(slot):
-    #                 print(f"✅ Enrolled slot {slot}")
-    #             else:
-    #                 print("❌ Enrollment failed")
-
-    #         elif choice == "f":
-    #             result = self.authenticate()
-    #             if result is None:
-    #                 print("❌ No match found")
-
-    #         elif choice == "u":
-    #             slot = self._get_valid_id()
-    #             if self.update(slot):
-    #                 print(f"🔁 Updated slot {slot}")
-    #             else:
-    #                 print("❌ Update failed")
-
-    #         elif choice == "d":
-    #             slot = self._get_valid_id()
-    #             self.delete(slot)
-
-    #         elif choice == "q":
-    #             print("👋 Goodbye!")
-    #             break
-
-    #         else:
-    #             print("❓ Invalid choice")
-
-    #         print_menu()
-    #         time.sleep(0.2)
+    
+    def delete_all(self):
+        self.finger.empty_library()

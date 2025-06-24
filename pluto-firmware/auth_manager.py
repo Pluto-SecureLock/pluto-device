@@ -7,10 +7,13 @@ import circuitpython_hmac as hmac
 
 AUTH_FILE = "sd/auth.db"
 SECRET_FILE = "sd/secret.db"
+KEYS_FILE = "sd/keys.db"
+SYS_PARAM_FILE = "sd/systemparam_finger.db"
 
-SYS_PARAM_FILE = "sd/systemparam_finger.json"
+THE_FILES = [AUTH_FILE, SECRET_FILE, KEYS_FILE, SYS_PARAM_FILE]
+
 SALT_SIZE = 16  # 128-bit salt
-
+DEBUG = True
 
 class AuthManager:
     def __init__(self):
@@ -18,6 +21,7 @@ class AuthManager:
         self._authenticated = False
         self._f_authenticated = False
         self._vault = None
+        self._master_key = None
         pass
     
     def attach_fingerprint(self, fingerprint):
@@ -160,12 +164,15 @@ class AuthManager:
         return False
     
     def get_master_key(self):
+        if not self.is_registered(SECRET_FILE):
+            self.set_master_key()
         salt , key = self._load_credentials(SECRET_FILE)
         template = self.fingerprint.get_template()
-        aes_key = self._derive_key_from_template(template, salt)
-        print(f"🔑 Master key derived: {binascii.hexlify(aes_key).decode('utf-8')}")
-        print(f"🔑 Master key origina: {key}")
-        return aes_key
+        self._master_key = self._derive_key_from_template(template, salt)
+        if DEBUG: 
+            print(f"🔑 Master key derived: {binascii.hexlify(self._master_key).decode('utf-8')}")
+            print(f"🔑 Master key original: {key}")
+        return True if self._master_key else False
 
     def authenticate(self) -> bool:
         """Attempts to authenticate via fingerprint sensor and load master key into vault."""
@@ -183,7 +190,7 @@ class AuthManager:
         master_key = self._retrieve_master_key()
         if master_key:
             self._master_key = master_key
-            self._vault = KeyStore(master_key)
+            self._vault = KeyStore(self._master_key)
             return True
 
         return False
@@ -201,9 +208,31 @@ class AuthManager:
     
     def update_fingerprint(self, fingerprint_id):
         if isinstance(fingerprint_id, int):
-            self._reset_f_authentication()
             if self.authenticate():
                return self.fingerprint.update(fingerprint_id)
         else:
             print("❌ Invalid fingerprint ID")
         return False
+    
+    def factory_reset(self):
+        if not self.authenticate():
+            print("❌ Authentication failed. Factory reset aborted.")
+            return False
+
+        failed_files = [f for f in THE_FILES if not self._try_delete(f)]
+
+        if failed_files:
+            print(f"❌ Could not delete: {', '.join(failed_files)}.")
+
+        self.fingerprint.delete_all()
+        print("🧼 All files and fingerprint data erased.")
+        return True
+
+    def _try_delete(self,filename):
+        try:
+            os.remove(filename)
+            print(f"✅ {filename} deleted.")
+            return True
+        except OSError:
+            print(f"⚠️ {filename} not found or could not be deleted.")
+            return False
