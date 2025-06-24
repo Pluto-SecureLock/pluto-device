@@ -279,7 +279,7 @@ class Adafruit_Fingerprint:
             raise RuntimeError("Uknown sensor buffer type")
         res = []
         if self._get_packet(12)[0] == 0:
-            res = self._get_data2(9)
+            res = self._get_data(9)
             self._print_debug("get_fpdata data size:", str(len(res)))
         self._print_debug("get_fdata res:", res, data_type="hex")
         return res

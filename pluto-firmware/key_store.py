@@ -1,6 +1,6 @@
 import json
-import os
 from aes_encryptor import decrypt_aes_cbc_bytes, encrypt_aes_cbc_bytes
+from utils import csv_reader
 
 KEYS_FILE = "sd/keys.db"
 
@@ -22,17 +22,57 @@ class KeyStore:
     def get(self, site):
         return self.db.get(site)
 
-    def add(self, site, username, password):
-        self.db[site] = {"username": username, "password": password}
+    def add(self, site: str, url: str, username: str,
+            password: str, note: str = "") -> None:
+        """Add / overwrite one credential and persist."""
+        self.db[site] = {
+            "url": url,
+            "username": username,
+            "password": password,
+            "note": note,
+        }
         self._save()
+
+
+    def import_csv(self, csv_blob: str, *, skip_duplicates=False):
+        added, updated, skipped = [], [], []
+
+        for row_no, row in enumerate(csv_reader(csv_blob), 1):
+            if len(row) < 4:              # note is optional
+                skipped.append(f"line {row_no} (have {len(row)} cols)")
+                continue
+
+            name, url, user, pwd, *note = row
+            note = note[0] if note else ""
+
+            if skip_duplicates and name in self.db:
+                skipped.append(name)
+                continue
+
+            (updated if name in self.db else added).append(name)
+            self.add(name, url, user, pwd, note)
+
+        return added, updated, skipped
     
-    def delete(self,domain):
+    def delete(self, domain: str) -> bool:
         if domain in self.db:
             del self.db[domain]
             self._save()
             return True
         else:
             return False
+    
+    def update(self, site: str, updates) -> bool:
+        """Update an existing credential."""
+        if site not in self.db:
+            return False
+        
+        for item in updates.split(","):
+            key, value = item.split(":")
+            self.db[site][key.strip()] = value.strip()
+
+        self._save()
+        return True
 
     def _save(self):
         try:

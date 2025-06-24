@@ -41,7 +41,6 @@ class AuthManager:
         """HKDF-Expand step (RFC 5869)"""
         hash_len = hashlib.sha256().digest_size
         blocks = []
-        output = b""
         block = b""
         for counter in range(1, -(-length // hash_len) + 1):  # ceil(length/hash_len)
             block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
@@ -154,12 +153,20 @@ class AuthManager:
             salt = self.generate_salt()
             aes_key = self._derive_key_from_template(template, salt)
             try :
-                self._save_credentials(salt, binascii.hexlify(aes_key).decode("utf-8"), KEY_FILE)
+                self._save_credentials(salt, binascii.hexlify(aes_key).decode("utf-8"), SECRET_FILE)
                 return True
             except Exception as e:
                 print(f"❌ Error saving master key: {e}")
         return False
     
+    def get_master_key(self):
+        salt , key = self._load_credentials(SECRET_FILE)
+        template = self.fingerprint.get_template()
+        aes_key = self._derive_key_from_template(template, salt)
+        print(f"🔑 Master key derived: {binascii.hexlify(aes_key).decode('utf-8')}")
+        print(f"🔑 Master key origina: {key}")
+        return aes_key
+
     def authenticate(self) -> bool:
         """Attempts to authenticate via fingerprint sensor and load master key into vault."""
         if not self.fingerprint:

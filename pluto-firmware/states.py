@@ -124,6 +124,8 @@ class AutoState(BaseState):
 
         if command:
             self.context.screen.update("auto_view", f"Recieved {command}")
+            #TODO: REMOVE THIS LINE
+            self.context.authenticator.get_master_key()  # Ensure master key is set before executing commands
             time.sleep(1)
             self.execute_with_retry(command)
             self.context.transition_to(AutoState(self.context))
