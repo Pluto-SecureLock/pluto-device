@@ -20,7 +20,7 @@ class Screen:
         # Create the display object
         self.display = SSD1306(display_bus, width=width, height=height)
         # Rotate the display 180 degrees
-        self.display.rotation = 180  
+        self.display.rotation = 0
         # Create a group to manage display content
         self.splash = displayio.Group()
         self.display.root_group = self.splash

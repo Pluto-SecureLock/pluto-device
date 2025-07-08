@@ -62,18 +62,26 @@ class KeyStore:
         else:
             return False
     
-    def update(self, site: str, updates) -> bool:
+    def update(self, site: str, updates_string: str) -> bool:
         """Update an existing credential."""
         if site not in self.db:
             return False
-        
-        for item in updates.split(","):
-            key, value = item.split(":")
+
+        parsed_updates = list(csv_reader(updates_string))
+
+        if not parsed_updates:
+            return False
+
+        for item_str in parsed_updates[0]: # Assuming a single row of updates
+            if ':' not in item_str:
+                continue
+            
+            key, value = item_str.split(":", 1) # Split only on the first colon in case value has colons
             self.db[site][key.strip()] = value.strip()
 
         self._save()
         return True
-
+    
     def _save(self):
         try:
             plaintext = json.dumps(self.db)

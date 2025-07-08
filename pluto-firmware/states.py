@@ -63,7 +63,7 @@ class UnblockState(BaseState):
                 # Initialize the fingerprint authenticator
                 self.context.initialize_fingerprint(pin)
                 # Verify master key
-                self.context.authenticator.get_master_key()
+                self.context.authenticator.set_master_key()
                 # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:

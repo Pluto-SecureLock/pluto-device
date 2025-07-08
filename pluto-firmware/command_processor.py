@@ -1,5 +1,6 @@
 from aes_encryptor import encrypt_aes_cbc_bytes, decrypt_aes_cbc_bytes
 import time
+from utils import csv_reader
 
 DELAY = 0.0
 DEBUG_MODE = True
@@ -110,16 +111,16 @@ class CommandProcessor:
                 print(f"Error: {e}")
 
         elif command.startswith("add "):
-            """add amazon:https://amazon.com,alice,pa55,"shopping account"""
+            """add amazon:https://amazon.com,alice,"pa55,word",shopping account"""
             try:
-                # Extraer los datos desde el comando: site:url,username,password,note
+                # Extract the data from the command: site:url,username,password,note
                 raw_data = command[4:].strip()
 
-                # Separar por ":" para obtener el nombre del sitio y los valores
                 site, values = raw_data.split(":", 1)
+                site = site.strip()
 
-                # Separar los valores por coma: url, username, password, note (nota es opcional)
-                parts = [part.strip() for part in values.split(",")]
+                # Use your custom csv_reader to handle quoted fields
+                parts = next(csv_reader(values))
 
                 if len(parts) < 3:
                     self.secure_write("❌ Missing required fields. Usage: add site:url,username,password[,note]\n")
@@ -129,15 +130,14 @@ class CommandProcessor:
                 username = parts[1]
                 password = parts[2]
                 note = parts[3] if len(parts) > 3 else ""
-
-                # Añadir al vault
+                
+                # Add to vault
                 vault = self.authenticator.get_vault()
                 vault.add(site, url, username, password, note)
                 self.secure_write(f"✅ Added credentials for {site}\n")
 
             except Exception as e:
                 self.secure_write(f"❌ Failed to add credentials: {e}\n")
-
         
         elif command.startswith("get "):
             _, domain = command.split(" ", 1)
@@ -172,8 +172,8 @@ class CommandProcessor:
             except Exception as e:
                 self.secure_write(f"❌ Failed to delete credentials: {e}\n")
 
-        elif command.startswith("modify "):
-            """modify example.com[username:alice_wonder,password:newP@ss,note:2FA enabled]"""
+        elif command.startswith("update "):
+            """update example.com[username:alice_wonder,password:newP@ss,note:2FA enabled]"""
             try:
                 domain, rest = command[7:].split("[", 1)
                 domain = domain.strip()
