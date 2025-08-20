@@ -102,8 +102,9 @@ class CommandProcessor:
                     return
                 self.secure_write(f"Typing...\n")
                 time.sleep(1)
-                self.hid.type_text(creds["username"], delay=DELAY)
-                self.hid.key_strokes("TAB")
+                if (len(creds["username"]) > 0):
+                    self.hid.type_text(creds["username"], delay=DELAY)
+                    self.hid.key_strokes("TAB")
                 self.hid.type_text(creds["password"], delay=DELAY)
                 self.hid.key_strokes("ENTER")
             except Exception as e:
@@ -184,9 +185,9 @@ class CommandProcessor:
                 if not vault.update(domain, updates):
                     self.secure_write("⚠️ Failed to update credentials\n")
                     return
-                self.secure_write(f"✏️ Modified credentials for {domain}\n")
+                self.secure_write(f"Modified credentials for {domain}\n")
             except Exception as e:
-                self.secure_write(f"❌ Failed to modify credentials: {e}\n")
+                self.secure_write(f"Failed to modify credentials: {e}\n")
         
         elif command.startswith("bulkadd "):
             """bulkadd <csv_blob>

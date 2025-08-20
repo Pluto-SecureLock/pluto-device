@@ -2,7 +2,6 @@ import storage
 import board, digitalio
 import usb_cdc
 
-
 # On the Macropad, pressing a key grounds it. You need to set a pull-up.
 # If not pressed, the key will be at +V (due to the pull-up).
 button = digitalio.DigitalInOut(board.D9)
@@ -19,4 +18,4 @@ else:
 #    storage.enable_usb_drive()
 #    usb_cdc.enable(console=True,data=True)
    storage.disable_usb_drive()
-   usb_cdc.enable(console=True,data=True)
+   usb_cdc.enable(console=False,data=True)

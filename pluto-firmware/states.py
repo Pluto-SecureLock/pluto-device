@@ -120,7 +120,7 @@ class AutoState(BaseState):
     def enter(self):
         self.context.screen.clear()
         self.context.screen.write("Send Command...", line=1, identifier="auto_view")
-        self.context.usb.write("\U0001F4E5 Ready to receive commands over USB Serial...\n")
+        #self.context.usb.write("Ready to receive commands over USB Serial...\n")
 
     def handle(self):
         command = self.context.usb.read(echo=False)
@@ -264,9 +264,10 @@ class LoginState(BaseState):
             creds = vault.get(domain)
             self.context.usb.write(f"\U0001F511 Credentials for {domain}: {creds}")
             if creds:
-                time.sleep(0.5)
-                self.context.processor.hid.type_text(creds["username"], delay=0.0)
-                self.context.processor.hid.key_strokes("TAB")
+                if (len(creds["username"]) > 0):
+                    time.sleep(0.2)
+                    self.context.processor.hid.type_text(creds["username"], delay=0.0)
+                    self.context.processor.hid.key_strokes("TAB")
                 time.sleep(0.1)
                 self.context.processor.hid.type_text(creds["password"], delay=0.0)
                 self.context.processor.hid.key_strokes("ENTER")
