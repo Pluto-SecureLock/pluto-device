@@ -122,7 +122,13 @@ class FingerprintAuthenticator:
         else:
             print("❌ No fingerprints found")
             return False
-        
+
+    def initialize(self):
+        if self.has_fingerprints():
+            return True
+        else:
+            self._ensure_two_fingerprints()
+
     def enroll(self, location: int) -> bool:
         self.screen.clear()
         self.screen.write("Creating fingerprint", line=1, identifier="line1")
