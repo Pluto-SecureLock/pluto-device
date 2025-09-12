@@ -171,3 +171,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Secrets file
+pluto-firmware/sd/
+
+# Generals
+pluto-firmware/boot_out.txt
