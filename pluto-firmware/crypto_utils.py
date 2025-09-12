@@ -16,7 +16,7 @@ def unpad(padded_data):
         raise ValueError("Invalid padding")
     return padded_data[:-pad_len]
 
-def encrypt_aes_cbc(plaintext, key_string):
+def encrypt_aes(plaintext, key_string):
     key = key_string.encode("utf-8")
     key = (key + b"\x00" * BLOCK_SIZE)[:BLOCK_SIZE]
 
@@ -31,7 +31,7 @@ def encrypt_aes_cbc(plaintext, key_string):
     return binascii.b2a_base64(result).decode("utf-8").strip()
 
 
-def decrypt_aes_cbc(base64_input, key_string):
+def decrypt_aes(base64_input, key_string):
     key = key_string.encode("utf-8")
     key = (key + b"\x00" * BLOCK_SIZE)[:BLOCK_SIZE]
 
@@ -56,7 +56,7 @@ def decrypt_aes_cbc(base64_input, key_string):
     except Exception:
         return "[ERROR] Invalid padding or decoding"
 
-def encrypt_aes_cbc_bytes(plaintext: str, key: bytes) -> str:
+def encrypt_aes_bytes(plaintext: str, key: bytes) -> str:
     """
     Encrypts the given plaintext using AES-CBC with the given binary key.
     Returns a base64-encoded string of IV + ciphertext.
@@ -73,7 +73,7 @@ def encrypt_aes_cbc_bytes(plaintext: str, key: bytes) -> str:
     result = iv + encrypted
     return binascii.b2a_base64(result).decode("utf-8").strip()
 
-def decrypt_aes_cbc_bytes(base64_input: str, key: bytes) -> str:
+def decrypt_aes_bytes(base64_input: str, key: bytes) -> str:
     """
     Decrypts the base64 input string using AES-CBC and the given binary key.
     Returns the plaintext as a UTF-8 string.
