@@ -4,8 +4,8 @@ from usb_serial import USBSerial
 from hid_output import HIDOutput
 from command_processor import CommandProcessor
 from finger_print import FingerprintAuthenticator
-from auth_manager import AuthManager, SECRET_FILE, AUTH_FILE
-from states import AutoState, UnblockState
+from auth_manager import AuthManager
+from states import UnblockState
 
 class ApplicationContext:
     def __init__(self):
@@ -16,8 +16,6 @@ class ApplicationContext:
         self.processor = CommandProcessor(self.hid_output,self.usb,self.authenticator)
         self.encoder = RotaryEncoderWithButton()
         self.screen = Screen()
-        self.MASTER_KEY_FILE = SECRET_FILE
-        self.AUTH_FILE = AUTH_FILE
 
         # Application data / shared state
         self.password_length = 12

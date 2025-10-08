@@ -24,7 +24,7 @@ class CommandProcessor:
             if DEBUG_MODE:
                 data = str(plaintext).strip()
             else:
-                data = encrypt_aes_bytes(str(plaintext) , key=SESSION_KEY) 
+                data = encrypt_aes_bytes(str(plaintext), key=SESSION_KEY)
 
             self.usb.write(data + "\n")
             return True
@@ -35,12 +35,11 @@ class CommandProcessor:
     def secure_read(self, command):
         try: 
             if not DEBUG_MODE:
-                command = decrypt_aes_bytes(str(command) , key=SESSION_KEY) 
+                command = decrypt_aes_bytes(str(command), key=SESSION_KEY)
             return command.strip()
         except Exception as exc:
             self._log_usb_error("secure_read", exc)
             return None
-
 
     def execute(self, command):
         command = self.secure_read(command)
@@ -73,7 +72,7 @@ class CommandProcessor:
                 _, raw = command.split(" ", 1)
                 
                 # Split into key and payload
-                key_str, payload = raw.strip().split(":", 1)
+                key_str, _ = raw.strip().split(":", 1)
                 
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
@@ -201,7 +200,7 @@ class CommandProcessor:
             csv_blob = csv_blob_raw.replace("\\n", "\n")
             try:
                 vault = self.authenticator.get_vault()
-                #self.secure_write(f"{csv_blob}\n")
+
                 added, updated, skipped = vault.import_csv(csv_blob)
 
                 summary = "\n".join((

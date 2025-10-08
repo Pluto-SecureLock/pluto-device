@@ -1,5 +1,3 @@
-# main.py
-
 import time
 from application_context import ApplicationContext # type: ignore
 

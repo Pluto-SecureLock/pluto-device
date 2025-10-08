@@ -1,8 +1,12 @@
 import aesio
 import os
 import binascii
+import adafruit_hashlib as hashlib
+import circuitpython_hmac as hmac
+import microcontroller
 
 BLOCK_SIZE = 16
+SALT_SIZE = 16
 
 def pad(data):
     """Apply PKCS#7 padding."""
@@ -100,3 +104,33 @@ def decrypt_aes_bytes(base64_input: str, key: bytes) -> str:
         return unpadded.decode("utf-8")
     except Exception:
         return "[ERROR] Invalid padding or decoding"
+
+def generate_salt() -> bytes:
+    return os.urandom(SALT_SIZE)
+
+def hash_pin(pin: bytes, salt: bytes) -> bytes:
+    uid = microcontroller.cpu.uid
+    h = hashlib.sha256()
+    h.update(salt + pin + uid)
+    return h.digest()
+
+def hkdf_extract(salt: bytes, input_key_material: bytes) -> bytes:
+    """HKDF-Extract step (RFC 5869)"""
+    if not salt:
+        salt = bytes([0] * hashlib.sha256().digest_size)
+    return hmac.new(salt, input_key_material, hashlib.sha256).digest()
+
+def hkdf_expand(prk: bytes, info: bytes, length: int) -> bytes:
+    """HKDF-Expand step (RFC 5869)"""
+    hash_len = hashlib.sha256().digest_size
+    blocks = []
+    block = b""
+    for counter in range(1, -(-length // hash_len) + 1):  # ceil(length/hash_len)
+        block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
+        blocks.append(block)
+    return b"".join(blocks)[:length]
+
+def derive_key(template: bytes, salt: bytes = b"", info: bytes = b"fingerprint-key", length: int = 32) -> bytes:
+    """Derive AES key from fingerprint template using HKDF (CircuitPython version)"""
+    prk = hkdf_extract(salt, template)
+    return hkdf_expand(prk, info, length)

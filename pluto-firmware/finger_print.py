@@ -215,14 +215,15 @@ class FingerprintAuthenticator:
             self.finger.set_led(color=1, mode=2, speed=60, cycles=2)  # Flash red if fingerprint IS NOT a match
             return None
 
-        print(f"✅ Match: ID {self.finger.finger_id} (score {self.finger.confidence})")
-        
-        self.screen.update(identifier="line1", new_text=f"Match: ID {self.finger.finger_id} (score {self.finger.confidence})")
-        
+        if DEBUG: print(f"✅ Fingerprint Matched. Access Granted. ID #{self.finger.finger_id} with confidence {self.finger.confidence}")
+
+        self.screen.update(identifier="line1", new_text=f"Fingerprint Matched.")
+        self.screen.write("Access Granted.", line=2, identifier="line2")
+
         self._authenticated = True  # ✅ only change from here
         time.sleep(1)
         self.finger.set_led(color=2, mode=6, speed=30, cycles=2)  # Flash purple if fingerprint IS a match
-        self.screen.update(identifier="line1", new_text="")  # Clear screen before returning
+        self.screen.clear()
         return self.finger.finger_id
 
     def delete(self, location: int):
