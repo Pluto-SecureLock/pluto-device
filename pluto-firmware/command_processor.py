@@ -1,6 +1,7 @@
-from aes_encryptor import encrypt_aes_cbc_bytes, decrypt_aes_cbc_bytes
+from crypto_utils import encrypt_aes_bytes, decrypt_aes_bytes
 import time
-from utils import csv_reader
+from utils import csv_reader, generate_password
+
 
 DELAY = 0.0
 DEBUG_MODE = True
@@ -23,7 +24,7 @@ class CommandProcessor:
             if DEBUG_MODE:
                 data = str(plaintext).strip()
             else:
-                data = encrypt_aes_cbc_bytes(str(plaintext) , key=SESSION_KEY) 
+                data = encrypt_aes_bytes(str(plaintext), key=SESSION_KEY)
 
             self.usb.write(data + "\n")
             return True
@@ -34,12 +35,11 @@ class CommandProcessor:
     def secure_read(self, command):
         try: 
             if not DEBUG_MODE:
-                command = decrypt_aes_cbc_bytes(str(command) , key=SESSION_KEY) 
+                command = decrypt_aes_bytes(str(command), key=SESSION_KEY)
             return command.strip()
         except Exception as exc:
             self._log_usb_error("secure_read", exc)
             return None
-
 
     def execute(self, command):
         command = self.secure_read(command)
@@ -57,7 +57,7 @@ class CommandProcessor:
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
 
                 # Encrypt using the provided key
-                encrypted = encrypt_aes_cbc_bytes(plaintext=raw, key=key_bytes)
+                encrypted = encrypt_aes_bytes(plaintext=raw, key=key_bytes)
 
                 self.secure_write(f"🔐 Encrypted (base64): {encrypted}")
 
@@ -72,13 +72,13 @@ class CommandProcessor:
                 _, raw = command.split(" ", 1)
                 
                 # Split into key and payload
-                key_str, payload = raw.strip().split(":", 1)
+                key_str, _ = raw.strip().split(":", 1)
                 
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
 
                 # Encrypt using the provided key
-                decrypted = decrypt_aes_cbc_bytes(base64_input=raw, key=key_bytes)
+                decrypted = decrypt_aes_bytes(base64_input=raw, key=key_bytes)
 
                 self.secure_write(f"🔓 Decrypted: {decrypted}")
 
@@ -89,8 +89,8 @@ class CommandProcessor:
 
         elif command.startswith("encrypt_save "):
             _, msg = command.split(" ", 1)
-            encrypted = encrypt_aes_cbc_bytes(msg, key_string=self.master_key)
-            
+            encrypted = encrypt_aes_bytes(msg, key_string=self.master_key)
+
         elif command.startswith("type "):
             _, domain = command.split(" ", 1)
             domain = domain.strip()
@@ -200,7 +200,7 @@ class CommandProcessor:
             csv_blob = csv_blob_raw.replace("\\n", "\n")
             try:
                 vault = self.authenticator.get_vault()
-                self.secure_write(f"{csv_blob}\n")
+
                 added, updated, skipped = vault.import_csv(csv_blob)
 
                 summary = "\n".join((
@@ -211,6 +211,12 @@ class CommandProcessor:
                 self.secure_write(summary)
             except Exception as exc:
                 self.secure_write(f"❌ Bulk-add failed: {exc}\n")
+
+        elif command.startswith("gen_pass"):
+            length = 12
+            level = 1
+            password = generate_password(length=length, level=level)
+            self.hid.type_text(password, delay=DELAY)
 
         elif command.lower() == "help":
             self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>")

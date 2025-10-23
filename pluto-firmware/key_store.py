@@ -1,5 +1,5 @@
 import json
-from aes_encryptor import decrypt_aes_cbc_bytes, encrypt_aes_cbc_bytes
+from crypto_utils import decrypt_aes_bytes, encrypt_aes_bytes
 from utils import csv_reader
 
 KEYS_FILE = "sd/keys.db"
@@ -13,7 +13,7 @@ class KeyStore:
         try:
             with open(KEYS_FILE, "r") as f:
                 encrypted = f.read().strip()
-                decrypted = decrypt_aes_cbc_bytes(base64_input=encrypted, key=self.master_key)
+                decrypted = decrypt_aes_bytes(base64_input=encrypted, key=self.master_key)
                 return json.loads(decrypted)
         except Exception as e:
             print("⚠️ Failed to load key store:", e)
@@ -85,7 +85,7 @@ class KeyStore:
     def _save(self):
         try:
             plaintext = json.dumps(self.db)
-            encrypted = encrypt_aes_cbc_bytes(plaintext, self.master_key)
+            encrypted = encrypt_aes_bytes(plaintext, self.master_key)
             with open(KEYS_FILE, "w") as f:
                 f.write(encrypted)
             print("💾 Vault saved successfully.")

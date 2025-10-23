@@ -30,16 +30,22 @@ class SetupState(BaseState):
 
     def handle(self):
         # Update any input from the encoder
+
         self.pin_helper.update()
 
         if self.pin_helper.is_done():
             new_pin = self.pin_helper.get_pin()
             # Set the PIN in the authenticator
-            self.context.initialize_fingerprint(0000)
-            self.context.authenticator.set_pin(new_pin)
+            try:
+                self.context.initialize_fingerprint(0000)
+                print("Fingerprint initialized. with 0000")
+                self.context.authenticator.set_pin(new_pin)
+            except Exception as e:
+                self.context.screen.write(f"❌ Error initializing fingerprint: {e}", line=2, identifier="error")
+                return
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
+            time.sleep(0.7)
             self.context.authenticator.set_master_key()
-            time.sleep(0.5)
             self.context.transition_to(AutoState(self.context))
 
     def exit(self):
@@ -64,6 +70,7 @@ class UnblockState(BaseState):
                 self.context.initialize_fingerprint(pin)
                 # Verify master key
                 self.context.authenticator.set_master_key()
+                self.context.authenticator.compare_master_key()
                 # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:
@@ -237,6 +244,9 @@ class LoginState(BaseState):
                 self.context.screen.write(domain, line=2, identifier="domain")
             except Exception as e:
                 self.context.screen.write("🔒 No credentials", line=2, identifier="domain")
+                time.sleep(1)
+                self.context.transition_to(MenuState(self.context))
+                return
 
     def handle(self):
         direction = self.context.encoder.get_direction()
@@ -445,7 +455,7 @@ class SettingsState(BaseState):
                 time.sleep(1)
                 if self.context.authenticator.factory_reset():
                     self.context.screen.write("✅ Factory reset complete!", line=2, identifier="reset_done")
-                    time.sleep(1)
+                    time.sleep(0.8)
                     self.context.transition_to(SetupState(self.context))
                 else:
                     self.context.transition_to(SettingsState(self.context))

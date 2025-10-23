@@ -9,13 +9,9 @@ button.pull = digitalio.Pull.UP
 
 # Disable devices only if button is not pressed.
 if button.value:
-    storage.enable_usb_drive()
-    usb_cdc.enable(console=True,data=True)
-#    storage.disable_usb_drive()
-#    usb_cdc.enable(console=False,data=True)
-
-else:
-#    storage.enable_usb_drive()
-#    usb_cdc.enable(console=True,data=True)
    storage.disable_usb_drive()
    usb_cdc.enable(console=False,data=True)
+
+else:
+   storage.enable_usb_drive()
+   usb_cdc.enable(console=True,data=True)
