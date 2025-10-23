@@ -107,7 +107,7 @@ class AuthManager:
             return salt is not None and stored_hash is not None
         except:
             return False
-        
+
 #TODO: This function is not used anywhere
     def read_sysparams_and_compare(self, path: str = SYS_PARAM_FILE) -> bool:
         print("📟 Reading system parameters...")
@@ -134,6 +134,7 @@ class AuthManager:
         if not self.is_registered(KEY_SLOT):
             template = self.fingerprint.get_template()
             salt = generate_salt()
+            print(f"🔑 MASTER Template: {binascii.hexlify(template).decode('utf-8')}")
             aes_key = derive_key(template=template, salt=salt)
             try:
                 self._set_slot(KEY_SLOT, salt, aes_key)
@@ -147,8 +148,9 @@ class AuthManager:
             self.set_master_key()
         salt, key = self._get_slot(KEY_SLOT)
         template = self.fingerprint.get_template()
+        print(f"🔑 Template retrieved: {binascii.hexlify(template).decode('utf-8')}")
         self.master_key = derive_key(template=template, salt=salt)
-        if DEBUG: 
+        if DEBUG:
             print(f"🔑 Master key derived: {binascii.hexlify(self.master_key).decode('utf-8')}")
             print(f"🔑 Master key original: {binascii.hexlify(key).decode('utf-8')}")
             print(f"🔑 Master key match: {self.master_key == key}")
@@ -177,7 +179,7 @@ class AuthManager:
 
     def _retrieve_master_key(self):
         _ , key = self._get_slot(KEY_SLOT)
-        print(f"🔑 Master key retrieved: {key}")
+        print(f"🔑 Master key retrieved: {binascii.hexlify(key).decode('utf-8')}")
         return key
 
     def get_vault(self):

@@ -124,7 +124,7 @@ class CommandProcessor:
                 parts = next(csv_reader(values))
 
                 if len(parts) < 3:
-                    self.secure_write("❌ Missing required fields. Usage: add site:url,username,password[,note]\n")
+                    self.secure_write("❌ Missing required fields. Usage: add site:url,username,password,note\n")
                     return
 
                 url = parts[0]
@@ -212,11 +212,27 @@ class CommandProcessor:
             except Exception as exc:
                 self.secure_write(f"❌ Bulk-add failed: {exc}\n")
 
-        elif command.startswith("gen_pass"):
-            length = 12
-            level = 1
-            password = generate_password(length=length, level=level)
-            self.hid.type_text(password, delay=DELAY)
+        elif command.startswith("passwd"):
+            """gen_pass len=12,lvl=2"""
+            try:
+                _, options = command.split(" ", 1)
+                options = options.strip().split(",")
+
+                for option in options:
+                    key, value = option.split("=")
+                    key, value = key.strip().lower(), value.strip()
+
+                    if key == "len":
+                        length = int(value)
+                    elif key == "lvl":
+                        level = int(value)
+                    else:
+                        raise ValueError(f"Unknown parameter: '{key}'")
+
+                password = generate_password(length=length, level=level)
+                self.hid.type_text(password, delay=DELAY)
+            except Exception as e:
+                self.secure_write(f"❌ Password generation failed: {e}\n")
 
         elif command.lower() == "help":
             self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>")

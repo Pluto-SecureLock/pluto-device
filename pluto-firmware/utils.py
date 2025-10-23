@@ -70,14 +70,27 @@ def csv_reader(text: str,
         yield row
 
 def generate_password(length, level):
+    # Safe conversion with defaults
+    try:
+        length, level = int(length), int(level)
+    except (ValueError, TypeError):
+        length, level = 12, 1
+
+    # Clamp invalid ranges
+    length = length if length > 0 else 12
+    level = level if level in (0, 1, 2) else 1
+
+    # Character sets by complexity level
     letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    lowercase = "abcdefghijklmnopqrstuvwxyz"
     digits = "0123456789"
     punctuation = "!@#$%^&*()-_=+[]{}|;:,.<>?/"
-    if level == 0:
-        chars = letters + digits
-    elif level == 1:
-        chars = lowercase + digits + punctuation
-    else:
-        chars = letters + digits + punctuation
+    lowercase = "abcdefghijklmnopqrstuvwxyz"
+
+    charsets = {
+        0: letters + digits, # Alphanumeric
+        1: lowercase + digits + punctuation, # Lowercase + symbols
+        2: letters + digits + punctuation # Mixed
+    }
+
+    chars = charsets[level]
     return ''.join(random.choice(chars) for _ in range(length))
