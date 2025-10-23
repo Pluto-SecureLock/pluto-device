@@ -3,7 +3,6 @@ import board
 import busio
 import adafruit_fingerprint
 import json
-import digitalio
 
 MAX_SLOTS = 127                # sensor’s addressable slots (1-127)
 MAX_FINGERS = 2              # max number of fingerprints to store
@@ -241,7 +240,7 @@ class FingerprintAuthenticator:
         return False
 
     def get_template(self):
-        return self.finger.get_template(slot=1)
+        return self.finger.get_template(slot=1)[:128]
     
     def delete_all(self):
         self.finger.empty_library()

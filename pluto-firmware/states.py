@@ -70,7 +70,7 @@ class UnblockState(BaseState):
                 self.context.initialize_fingerprint(pin)
                 # Verify master key
                 self.context.authenticator.set_master_key()
-                self.context.authenticator.compare_master_key()
+                # self.context.authenticator.compare_master_key()
                 # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:
@@ -218,7 +218,8 @@ class MenuState(BaseState):
 class AuthState(BaseState):
     def enter(self):
         self.context.screen.clear()
-        self.context.screen.write("Authenticate with key", line=1, identifier="auth")
+        self.context.screen.write("Ready for", line=1, identifier="auth")
+        self.context.screen.write("Authentication...", line=2, identifier="required")
         self.context.usb.write("Waiting for authentication...")
 
     def handle(self):
