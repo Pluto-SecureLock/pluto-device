@@ -213,7 +213,7 @@ class CommandProcessor:
                 self.secure_write(f"❌ Bulk-add failed: {exc}\n")
 
         elif command.startswith("passwd"):
-            """gen_pass len=12,lvl=2"""
+            """passwd len=12,lvl=2"""
             try:
                 _, options = command.split(" ", 1)
                 options = options.strip().split(",")
@@ -230,6 +230,7 @@ class CommandProcessor:
                         raise ValueError(f"Unknown parameter: '{key}'")
 
                 password = generate_password(length=length, level=level)
+
                 self.hid.type_text(password, delay=DELAY)
             except Exception as e:
                 self.secure_write(f"❌ Password generation failed: {e}\n")
