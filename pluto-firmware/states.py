@@ -22,7 +22,6 @@ class BaseState:
 class SetupState(BaseState):
     def enter(self):
         self.context.screen.clear()
-        self.context.screen.write("Initial Setup...", line=1, identifier="setup")
 
         # PIN setup
         self.context.screen.write("🔑 Set 4-digit PIN",line=2)
@@ -37,12 +36,15 @@ class SetupState(BaseState):
             new_pin = self.pin_helper.get_pin()
             # Set the PIN in the authenticator
             try:
-                self.context.initialize_fingerprint(0000)
-                print("Fingerprint initialized. with 0000")
+                self.context.initialize_fingerprint(0)  # Initialize fingerprint with default PIN
                 self.context.authenticator.set_pin(new_pin)
+
             except Exception as e:
-                self.context.screen.write(f"❌ Error initializing fingerprint: {e}", line=2, identifier="error")
-                return
+                self.context.screen.clear()
+                self.context.screen.write(f"{e}", line=2, identifier="error")
+                print(f"❌ Error setting PIN during setup: {e}")
+                return self.enter()  # Retry setup
+            self.context.screen.clear()
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
             time.sleep(0.7)
             self.context.authenticator.set_master_key()
@@ -58,7 +60,7 @@ class UnblockState(BaseState):
             self.context.transition_to(SetupState(self.context))
         else:
             self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
-        
+
     def handle(self):
         self.pin_helper.update()
 
@@ -68,9 +70,11 @@ class UnblockState(BaseState):
             if self.context.authenticator.verify_pin(pin):
                 # Initialize the fingerprint authenticator
                 self.context.initialize_fingerprint(pin)
+            
                 # Verify master key
                 self.context.authenticator.set_master_key()
                 # self.context.authenticator.compare_master_key()
+
                 # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:
@@ -116,6 +120,11 @@ class PinEntryHelper:
             if self.index >= 4:
                 self._done = True
 
+        elif self.encoder.rtr_was_pressed():
+            if self.index > 0:
+                self.index -= 1
+                time.sleep(0.2)  # debounce
+
     def is_done(self):
         return self._done
 
@@ -127,7 +136,6 @@ class AutoState(BaseState):
     def enter(self):
         self.context.screen.clear()
         self.context.screen.write("Send Command...", line=1, identifier="auto_view")
-        #self.context.usb.write("Ready to receive commands over USB Serial...\n")
 
     def handle(self):
         command = self.context.usb.read(echo=False)

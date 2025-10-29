@@ -9,11 +9,14 @@ MAX_FINGERS = 2              # max number of fingerprints to store
 DEBUG = True
 
 class FingerprintAuthenticator:
-    def __init__(self, max_fingers=MAX_FINGERS, pin=0000,screen=None):
+    def __init__(self, max_fingers=MAX_FINGERS, pin: int = 0000, screen=None):
         self.screen = screen # Attach the screen if provided
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
         password_tuple = tuple(pin.to_bytes(4, 'big'))
         self.finger = adafruit_fingerprint.Adafruit_Fingerprint(self.uart, passwd=password_tuple)
+        if self.finger is None:
+            self.uart.deinit()
+            raise ValueError("Failed to initialize fingerprint sensor.")
         self.max_fingers = max_fingers
         #self.irq_pin = self._enable_irq()
         self._authenticated = False  # private variable
@@ -24,7 +27,7 @@ class FingerprintAuthenticator:
     def _verify_sensor(self,DEBUG=True):
         if DEBUG: print("🔋 Verifying sensor...")
         if self.finger.verify_password() != adafruit_fingerprint.OK:
-            raise RuntimeError("❌ Failed to find sensor; check wiring/power!")
+            raise RuntimeError("❌ Failed to find sensor; Incorrect password")
         if DEBUG: print("✅ Sensor verified")
         if not self._ensure_two_fingerprints():
             raise RuntimeError("❌ Failed to ensure exactly two fingerprints.")
@@ -105,17 +108,18 @@ class FingerprintAuthenticator:
         print(json.dumps(current_params))
         return json.dumps(current_params)
     
-    def set_pin(self, pin: int) -> str:
-        pin_set = self.finger.set_password(pin)
+    def set_pin(self, pin: str) -> str:
+        pin_set = self.finger.set_password(pin) # PIN [min 0, max 9999]
         if pin_set == adafruit_fingerprint.OK:
-            print("OK")
+            print(f"New PIN {pin} set successfully.")
             return True
         else:
-            print("ERROR")
+            print("ERROR setting new PIN.")
             return False
         
     def has_fingerprints(self) -> bool:
-        if self.finger.count_templates() > 0:
+        self.finger.count_templates()
+        if self.finger.template_count > 0:
             print("✅ Fingerprints found")
             return True
         else:
@@ -123,10 +127,7 @@ class FingerprintAuthenticator:
             return False
 
     def initialize(self):
-        if self.has_fingerprints():
-            return True
-        else:
-            self._ensure_two_fingerprints()
+        self._ensure_two_fingerprints()
 
     def enroll(self, location: int) -> bool:
         self.screen.clear()
@@ -244,3 +245,7 @@ class FingerprintAuthenticator:
     
     def delete_all(self):
         self.finger.empty_library()
+
+    def hard_reset(self):
+        self.delete_all()
+        self.set_pin(0)  # Reset to default PIN

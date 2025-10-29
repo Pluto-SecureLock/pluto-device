@@ -134,13 +134,16 @@ class AuthManager:
         if not self.is_registered(KEY_SLOT):
             template = self.fingerprint.get_template()
             salt = generate_salt()
-            print(f"🔑 MASTER Template: {binascii.hexlify(template).decode('utf-8')}")
+            #print(f"🔑 MASTER Template: {binascii.hexlify(template).decode('utf-8')}")
+            print(f"Master Key {template}")
             aes_key = derive_key(template=template, salt=salt)
             try:
                 self._set_slot(KEY_SLOT, salt, aes_key)
                 return True
             except Exception as e:
                 print(f"❌ Error saving master key: {e}")
+        else:
+            print("❌ Master key already set.")
         return False
     
     def compare_master_key(self):
@@ -205,7 +208,7 @@ class AuthManager:
         if failed_files and not nvm_wipe():
             print(f"❌ Could not delete: {', '.join(failed_files)}.")
 
-        self.fingerprint.delete_all()
+        self.fingerprint.hard_reset() #Delete all fingerprints and reset PIN
         print("🧼 All files and fingerprint data erased.")
         return True
 

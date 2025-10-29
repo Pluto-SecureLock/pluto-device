@@ -1,3 +1,4 @@
+import time
 from screen import Screen
 from encoder import RotaryEncoderWithButton
 from usb_serial import USBSerial
@@ -6,6 +7,8 @@ from command_processor import CommandProcessor
 from finger_print import FingerprintAuthenticator
 from auth_manager import AuthManager
 from states import UnblockState
+
+INITIAL_STATE = UnblockState()
 
 class ApplicationContext:
     def __init__(self):
@@ -30,8 +33,8 @@ class ApplicationContext:
         self.login_index = 0
 
         # Set the initial state
-        self.current_state = UnblockState(self)
-        self.transition_to(UnblockState(self))
+        self.current_state = INITIAL_STATE
+        self.transition_to(self.current_state)
 
     def transition_to(self, new_state):
         self.current_state.exit()
@@ -46,4 +49,3 @@ class ApplicationContext:
         if self.fingerprint is None:
             self.fingerprint = FingerprintAuthenticator(pin=pin,screen=self.screen)
             self.authenticator.attach_fingerprint(self.fingerprint)
-
