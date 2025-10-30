@@ -1,5 +1,6 @@
 import time
 from utils import generate_password
+from encoder import PinEntryHelper
 
 # --- Base State Class --- #
 class BaseState:
@@ -22,7 +23,6 @@ class BaseState:
 class SetupState(BaseState):
     def enter(self):
         self.context.screen.clear()
-        self.context.screen.write("Initial Setup...", line=1, identifier="setup")
 
         # PIN setup
         self.context.screen.write("🔑 Set 4-digit PIN",line=2)
@@ -37,12 +37,15 @@ class SetupState(BaseState):
             new_pin = self.pin_helper.get_pin()
             # Set the PIN in the authenticator
             try:
-                self.context.initialize_fingerprint(0000)
-                print("Fingerprint initialized. with 0000")
+                self.context.initialize_fingerprint(0)  # Initialize fingerprint with default PIN
                 self.context.authenticator.set_pin(new_pin)
+
             except Exception as e:
-                self.context.screen.write(f"❌ Error initializing fingerprint: {e}", line=2, identifier="error")
-                return
+                self.context.screen.clear()
+                self.context.screen.write(f"{e}", line=2, identifier="error")
+                print(f"❌ Error setting PIN during setup: {e}")
+                return self.enter()  # Retry setup
+            self.context.screen.clear()
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
             time.sleep(0.7)
             self.context.authenticator.set_master_key()
@@ -58,7 +61,7 @@ class UnblockState(BaseState):
             self.context.transition_to(SetupState(self.context))
         else:
             self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
-        
+
     def handle(self):
         self.pin_helper.update()
 
@@ -68,9 +71,11 @@ class UnblockState(BaseState):
             if self.context.authenticator.verify_pin(pin):
                 # Initialize the fingerprint authenticator
                 self.context.initialize_fingerprint(pin)
+            
                 # Verify master key
                 self.context.authenticator.set_master_key()
                 # self.context.authenticator.compare_master_key()
+
                 # Transition to the main Auto state
                 self.context.transition_to(AutoState(self.context))
             else:
@@ -81,53 +86,10 @@ class UnblockState(BaseState):
     def exit(self):
         self.context.screen.clear()
 
-class PinEntryHelper:
-    def __init__(self, encoder, screen, prompt="Enter PIN"):
-        self.encoder = encoder
-        self.screen = screen
-        self.prompt = prompt
-        self.digits = [0, 0, 0, 0]
-        self.index = 0
-        self._done = False
-        self.last_rendered = ""
-
-        self.screen.clear()
-        self.screen.write(self.prompt, line=1, identifier="pin_prompt")
-        self.screen.write("PIN: 0000", line=2, identifier="pin_view")
-
-    def update(self):
-        if self._done:
-            return
-
-        direction = self.encoder.get_direction()
-        if direction == "CW":
-            self.digits[self.index] = (self.digits[self.index] + 1) % 10
-        elif direction == "CCW":
-            self.digits[self.index] = (self.digits[self.index] - 1) % 10
-
-        pin_str = ''.join(str(d) for d in self.digits)
-        if direction in ("CW", "CCW") and pin_str != self.last_rendered:
-            self.screen.update("pin_view", f"PIN: {pin_str}")
-            self.last_rendered = pin_str
-
-        if self.encoder.was_pressed():
-            self.index += 1
-            time.sleep(0.2)  # debounce
-            if self.index >= 4:
-                self._done = True
-
-    def is_done(self):
-        return self._done
-
-    def get_pin(self) -> int:
-        return int(''.join(str(d) for d in self.digits))
-
-
 class AutoState(BaseState):
     def enter(self):
         self.context.screen.clear()
         self.context.screen.write("Send Command...", line=1, identifier="auto_view")
-        #self.context.usb.write("Ready to receive commands over USB Serial...\n")
 
     def handle(self):
         command = self.context.usb.read(echo=False)

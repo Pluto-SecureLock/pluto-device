@@ -6,5 +6,6 @@ def main():
     while True:
         app_context.update()
         time.sleep(0.05)
+
 if __name__ == '__main__':
     main()

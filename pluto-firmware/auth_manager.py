@@ -56,22 +56,18 @@ class AuthManager:
         salt, hsh = load_slot(slot_index, SLOT_SIZE)
         return salt, hsh
 
-    def set_pin(self, pin: int) -> str:
-        if not isinstance(pin, int) or not (0 <= pin <= 9999):
-            raise ValueError("PIN must be a 4-digit number.")
-
+    def set_pin(self, pin_str: str) -> str:
+        """Sets a new PIN for the fingerprint sensor and stores its hash."""
         # if self._get_slot(PIN_SLOT) and not self.authenticate: #TODO
         #     raise ValueError("Please verify before setting a new one.")
-        
-        else:
-            pin_bytes = pin.to_bytes(4, 'big')
-            salt = generate_salt()
-            pin_hash = hash_pin(pin_bytes, salt)
-            self._set_slot(PIN_SLOT, salt, pin_hash)
-            self.fingerprint.set_pin(pin)
-            print("🔑 PIN set successfully.")
-            self.fingerprint.initialize()
-            return pin_hash
+        pin_bytes = pin_str.encode("utf-8")
+        salt = generate_salt()
+        pin_hash = hash_pin(pin_bytes, salt)
+        self._set_slot(PIN_SLOT, salt, pin_hash)
+        self.fingerprint.set_pin(pin_str)
+        print("🔑 PIN set successfully.")
+        self.fingerprint.initialize()
+        return pin_hash
     
     @property
     def authenticated(self):
@@ -81,10 +77,10 @@ class AuthManager:
     def f_authenticated(self):
         return self._f_authenticated
     
-    def verify_pin(self, pin: int) -> bool:
+    def verify_pin(self, pin_str: str) -> bool:
         self._reset_authentication()
         try:
-            pin_bytes = pin.to_bytes(4, 'big')
+            pin_bytes = pin_str.encode("utf-8")
             salt, stored_hash = self._get_slot(PIN_SLOT)
 
             if hash_pin(pin_bytes, salt) == stored_hash:
@@ -134,13 +130,16 @@ class AuthManager:
         if not self.is_registered(KEY_SLOT):
             template = self.fingerprint.get_template()
             salt = generate_salt()
-            print(f"🔑 MASTER Template: {binascii.hexlify(template).decode('utf-8')}")
+            #print(f"🔑 MASTER Template: {binascii.hexlify(template).decode('utf-8')}")
+            print(f"Master Key {template}")
             aes_key = derive_key(template=template, salt=salt)
             try:
                 self._set_slot(KEY_SLOT, salt, aes_key)
                 return True
             except Exception as e:
                 print(f"❌ Error saving master key: {e}")
+        else:
+            print("❌ Master key already set.")
         return False
     
     def compare_master_key(self):
@@ -205,7 +204,7 @@ class AuthManager:
         if failed_files and not nvm_wipe():
             print(f"❌ Could not delete: {', '.join(failed_files)}.")
 
-        self.fingerprint.delete_all()
+        self.fingerprint.hard_reset() #Delete all fingerprints and reset PIN
         print("🧼 All files and fingerprint data erased.")
         return True
 

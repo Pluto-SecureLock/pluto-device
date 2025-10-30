@@ -122,7 +122,7 @@ class Adafruit_Fingerprint:
         self.password = passwd
         self._uart = uart
         if self.verify_password() != OK:
-            raise RuntimeError("Failed to find sensor, check wiring!")
+            raise RuntimeError(f"Failed to find sensor, check password! {passwd}")
         if self.read_sysparam() != OK:
             raise RuntimeError("Failed to read system parameters!")
 
@@ -139,9 +139,9 @@ class Adafruit_Fingerprint:
         self._send_packet([_VERIFYPASSWORD] + list(self.password))
         return self._get_packet(12)[0]
     
-    def set_password(self,pin) -> bool:
-        """Checks if the password/connection is correct, returns True/False"""
-        self.password = pin.to_bytes(4, 'big')  # Convert to 4-byte big-endian
+    def set_password(self, pin: Tuple[int, int, int, int] = (0, 0, 0, 0)) -> bool:
+        """Set New password, returns True/False"""
+        self.password = pin
         self._send_packet([_SETPASSWORD] + list(self.password))
         return self._get_packet(12)[0]
 
