@@ -3,28 +3,27 @@ import board
 import busio
 import adafruit_fingerprint
 import json
+from  utils import pin_to_tuple
 
 MAX_SLOTS = 127                # sensor’s addressable slots (1-127)
 MAX_FINGERS = 2              # max number of fingerprints to store
 DEBUG = True
 
 class FingerprintAuthenticator:
-    def __init__(self, max_fingers=MAX_FINGERS, pin: int = 0000, screen=None):
+    def __init__(self, max_fingers=MAX_FINGERS, passwd: str = "0000", screen=None):
         self.screen = screen # Attach the screen if provided
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
-        password_tuple = tuple(pin.to_bytes(4, 'big'))
-        self.finger = adafruit_fingerprint.Adafruit_Fingerprint(self.uart, passwd=password_tuple)
+        self.passwd_tuple = pin_to_tuple(passwd) # "0304"->(0,3,0,4)
+        self.finger = adafruit_fingerprint.Adafruit_Fingerprint(self.uart, passwd=self.passwd_tuple)
         if self.finger is None:
             self.uart.deinit()
             raise ValueError("Failed to initialize fingerprint sensor.")
         self.max_fingers = max_fingers
-        #self.irq_pin = self._enable_irq()
         self._authenticated = False  # private variable
-        #self._last_irq_state = self.irq_pin.value  # track for edge detection
         self._verify_sensor()
         self.finger.set_led(color=3, mode=1, speed=20, cycles=2)
 
-    def _verify_sensor(self,DEBUG=True):
+    def _verify_sensor(self, DEBUG=True):
         if DEBUG: print("🔋 Verifying sensor...")
         if self.finger.verify_password() != adafruit_fingerprint.OK:
             raise RuntimeError("❌ Failed to find sensor; Incorrect password")
@@ -36,59 +35,55 @@ class FingerprintAuthenticator:
     def _ensure_two_fingerprints(self) -> bool:
         """
         Make sure *exactly* two fingerprints are stored.
-        ─ If 0 or 1 are present → enroll into the first free slots.
-        ─ If 3-127 are present  → abort (or wipe, if you really want empty_library()).
         Returns True on success, False on any failure.
         """
-        # 1) Count how many templates exist right now
-        status = self.finger.count_templates()
-        if status != adafruit_fingerprint.OK:
-            if DEBUG: print("❌ count_templates() failed")
-            return False
+        try:
+            # 1) Count how many templates exist right now
+            current_templates = self.count_templates()
 
-        current = self.finger.template_count
-        if DEBUG: print(f"🧾 Templates present: {current}")
+            if DEBUG: print(f"🧾 Templates present: {current_templates}")
 
-        # 2) Bail (or wipe) if there are already too many
-        if current > MAX_FINGERS:
-            if DEBUG: print("❌ More than 2 prints stored – aborting")
-            # self.finger.empty_library()   # uncomment if you *want* to wipe
-            return False
-
-        # 3) If we need to add 1 or 2 prints, find unused slots
-        if current < MAX_FINGERS:
-            # read_templates() gives us a list of occupied slot numbers
-            if self.finger.read_templates() != adafruit_fingerprint.OK:
-                if DEBUG: print("❌ read_templates() failed")
-                return False
-            occupied = set(self.finger.templates)
-
-            needed = MAX_FINGERS - current
-            for slot in range(1, MAX_SLOTS + 1):
-                if slot in occupied:
-                    continue                      # slot already used
-                if DEBUG: print(f"👉 Enrolling into free slot {slot} …")
-                if not self.enroll(slot):
-                    if DEBUG: print(f"❌ Enrollment failed in slot {slot}")
-                    return False
-                needed -= 1
-                time.sleep(0.5)                  # small debounce
-                if needed == 0:
-                    break
-
-            if needed:                           # ran out of free slots
-                if DEBUG: print("❌ Library is full – can’t reach exactly 2")
+            # 2) Bail (or wipe) if there are already too many
+            if current_templates > MAX_FINGERS:
+                if DEBUG: print("❌ More than 2 prints stored - aborting")
                 return False
 
-        if DEBUG: print("✅ Exactly 2 fingerprints stored")
-        return True
+            # 3) If no fingerprints needed, we're done
+            fingers_needed = MAX_FINGERS - current_templates  # p.ej. 2 - 1 = 1
 
-    # def _enable_irq(self):
-    #     self.irq_pin = digitalio.DigitalInOut(board.D2)
-    #     self.irq_pin.direction = digitalio.Direction.INPUT
-    #     self.irq_pin.pull = digitalio.Pull.UP  # most fingerprint sensors pull LOW when active
-    #     return self.irq_pin
-    
+            if fingers_needed <= 0:
+                return True  # nothing to do
+
+            # 4) If we need to add 1 or 2 prints, find unused slots
+            if current_templates < MAX_FINGERS:
+
+                # read_templates() gives us a list of occupied slot numbers
+                occupied = set(self.read_templates())
+                enrolled_so_far = 0
+
+                for slot in range(1, MAX_SLOTS + 1):
+                    if slot in occupied:
+                        continue                  # slot already used
+                    if DEBUG: print(f"👉 Enrolling into free slot {slot} …")
+                    enroll_index = enrolled_so_far + 1  # 1, 2, 3...
+                    if not self.enroll(slot, enroll_index):
+                        if DEBUG: print(f"❌ Enrollment failed in slot {slot}")
+                        return False
+
+                    enrolled_so_far += 1
+                    if enrolled_so_far >= fingers_needed:
+                        if DEBUG: print("✅ Reached required number of fingers")
+                        return True
+                    time.sleep(1)                 # time between enrollments
+
+            # if we reach here, Library is full
+            if DEBUG: print("❌ Library is full, can't enroll more")
+            return False
+
+        except Exception as e:
+            if DEBUG: print(f"❌ Exception during fingerprint setup: {e}")
+            return False
+
     @property
     def authenticated(self):
         return self._authenticated
@@ -108,30 +103,36 @@ class FingerprintAuthenticator:
         print(json.dumps(current_params))
         return json.dumps(current_params)
     
-    def set_pin(self, pin: str) -> str:
-        pin_set = self.finger.set_password(pin) # PIN [min 0, max 9999]
+    def set_pin(self, passwd: str) -> str:
+        self.passwd_tuple = pin_to_tuple(passwd)
+        pin_set = self.finger.set_password(self.passwd_tuple)
         if pin_set == adafruit_fingerprint.OK:
-            print(f"New PIN {pin} set successfully.")
+            print(f"New PIN {passwd} set successfully.")
             return True
         else:
             print("ERROR setting new PIN.")
             return False
         
-    def has_fingerprints(self) -> bool:
-        self.finger.count_templates()
-        if self.finger.template_count > 0:
-            print("✅ Fingerprints found")
-            return True
-        else:
-            print("❌ No fingerprints found")
-            return False
+    def count_templates(self) -> bool:
+        status = self.finger.count_templates()
+        if status != adafruit_fingerprint.OK:
+            if DEBUG: print("❌ count_templates() failed")
+            raise RuntimeError("Failed to get template count")
+        return self.finger.template_count
+
+    def read_templates(self) -> bool:
+        status = self.finger.read_templates()
+        if status != adafruit_fingerprint.OK:
+            if DEBUG: print("❌ read_templates() failed")
+            raise RuntimeError("Failed to read templates")
+        return self.finger.templates
 
     def initialize(self):
         self._ensure_two_fingerprints()
 
-    def enroll(self, location: int) -> bool:
+    def enroll(self, location: int, finger: str) -> bool:
         self.screen.clear()
-        self.screen.write("Creating fingerprint", line=1, identifier="line1")
+        self.screen.write(f"Creating #{finger}", line=1, identifier="line1")
         self.screen.write(" ", line=2, identifier="line2")
         for pass_num in (1, 2):
             prompt = "Place finger..." if pass_num == 1 else "Place same finger..."
@@ -164,7 +165,7 @@ class FingerprintAuthenticator:
                 print("✋ Remove finger…")
                 self.screen.update(identifier="line2", new_text="Remove finger...")
                 while self.finger.get_image() != adafruit_fingerprint.NOFINGER:
-                    time.sleep(0.5)
+                    time.sleep(1)
 
         print("🔧 Creating model...", end="")
         self.screen.update(identifier="line2", new_text="Creating model...")
@@ -174,7 +175,7 @@ class FingerprintAuthenticator:
             self.screen.update(identifier="line2", new_text="Model creation failed")
             return False
         print(" ✅")
-        self.screen.update(identifier="line2", new_text=f"Storing at {location}...")
+        # self.screen.update(identifier="line2", new_text=f"Storing at {location}...")
         print(f"💾 Storing at slot {location}...", end="")
 
         if self.finger.store_model(location) != adafruit_fingerprint.OK:

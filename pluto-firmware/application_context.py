@@ -8,7 +8,7 @@ from finger_print import FingerprintAuthenticator
 from auth_manager import AuthManager
 from states import UnblockState
 
-INITIAL_STATE = UnblockState()
+INITIAL_STATE = UnblockState
 
 class ApplicationContext:
     def __init__(self):
@@ -33,7 +33,7 @@ class ApplicationContext:
         self.login_index = 0
 
         # Set the initial state
-        self.current_state = INITIAL_STATE
+        self.current_state = INITIAL_STATE(self)
         self.transition_to(self.current_state)
 
     def transition_to(self, new_state):
@@ -45,7 +45,7 @@ class ApplicationContext:
         self.encoder.update()
         self.current_state.handle()
     
-    def initialize_fingerprint(self, pin: int):
+    def initialize_fingerprint(self, pin: str):
         if self.fingerprint is None:
-            self.fingerprint = FingerprintAuthenticator(pin=pin,screen=self.screen)
+            self.fingerprint = FingerprintAuthenticator(passwd=pin,screen=self.screen)
             self.authenticator.attach_fingerprint(self.fingerprint)

@@ -1,5 +1,6 @@
 import time
 from utils import generate_password
+from encoder import PinEntryHelper
 
 # --- Base State Class --- #
 class BaseState:
@@ -84,53 +85,6 @@ class UnblockState(BaseState):
 
     def exit(self):
         self.context.screen.clear()
-
-class PinEntryHelper:
-    def __init__(self, encoder, screen, prompt="Enter PIN"):
-        self.encoder = encoder
-        self.screen = screen
-        self.prompt = prompt
-        self.digits = [0, 0, 0, 0]
-        self.index = 0
-        self._done = False
-        self.last_rendered = ""
-
-        self.screen.clear()
-        self.screen.write(self.prompt, line=1, identifier="pin_prompt")
-        self.screen.write("PIN: 0000", line=2, identifier="pin_view")
-
-    def update(self):
-        if self._done:
-            return
-
-        direction = self.encoder.get_direction()
-        if direction == "CW":
-            self.digits[self.index] = (self.digits[self.index] + 1) % 10
-        elif direction == "CCW":
-            self.digits[self.index] = (self.digits[self.index] - 1) % 10
-
-        pin_str = ''.join(str(d) for d in self.digits)
-        if direction in ("CW", "CCW") and pin_str != self.last_rendered:
-            self.screen.update("pin_view", f"PIN: {pin_str}")
-            self.last_rendered = pin_str
-
-        if self.encoder.was_pressed():
-            self.index += 1
-            time.sleep(0.2)  # debounce
-            if self.index >= 4:
-                self._done = True
-
-        elif self.encoder.rtr_was_pressed():
-            if self.index > 0:
-                self.index -= 1
-                time.sleep(0.2)  # debounce
-
-    def is_done(self):
-        return self._done
-
-    def get_pin(self) -> int:
-        return int(''.join(str(d) for d in self.digits))
-
 
 class AutoState(BaseState):
     def enter(self):

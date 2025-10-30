@@ -94,3 +94,17 @@ def generate_password(length, level):
 
     chars = charsets[level]
     return ''.join(random.choice(chars) for _ in range(length))
+
+def normalize_pin(pin) -> str:
+    # Accept int or str; always return a 4-char, zero-padded string
+    if isinstance(pin, int):
+        if not (0 <= pin <= 9999): raise ValueError("PIN 0..9999")
+        return f"{pin:04d}"
+    s = str(pin).strip()
+    if not s.isdigit() or len(s) > 4: raise ValueError("4 digits max")
+    if len(s) < 4: s = ('0' * (4 - len(s))) + s
+    return s # "3" -> "0003" Add leading zeros
+
+def pin_to_tuple(pin_str: str):
+    s = normalize_pin(pin_str)          # "0304"
+    return tuple(int(ch) for ch in s)   # (0,3,0,4)
