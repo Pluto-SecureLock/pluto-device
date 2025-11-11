@@ -142,7 +142,7 @@ class AutoState(BaseState):
             else:
                 screen.restore_state(state)
                 attempts += 1
-                screen.write(f"Failed attempt {attempts}", line=1, identifier="failed")
+                screen.write(f"Failed {attempts}/{MAX_ATTEMPTS}", line=1, identifier="failed")
                 print(f"❌ Authentication attempt {attempts} failed.")
 
         # --- All attempts failed ---
