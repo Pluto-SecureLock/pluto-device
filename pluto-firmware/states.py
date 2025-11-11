@@ -2,6 +2,8 @@ import time
 from utils import generate_password
 from encoder import PinEntryHelper
 
+MAX_ATTEMPTS = 3
+
 # --- Base State Class --- #
 class BaseState:
     def __init__(self, context):
@@ -109,42 +111,46 @@ class AutoState(BaseState):
     def execute_with_retry(self, command):
         """
         Securely attempts fingerprint authentication up to 3 times.
-        If successful at any attempt, the command is executed.
-        If it fails 3 times, the command is dropped securely.
+        If a valid session already exists, skip authentication and run the command immediately.
+        Otherwise, prompt the user up to MAX_ATTEMPTS times.
         """
-        MAX_ATTEMPTS = 3
         attempts = 0
-        self.context.screen.clear()
-        # Write the initial state
-        self.context.screen.write("Waiting for Authentication...", line=1, identifier="waiting_view")
-        self.context.screen.write(f"Attempt {attempts + 1} of {MAX_ATTEMPTS}", line=2, identifier="attempts")
+        screen = self.context.screen
+        auth = self.context.authenticator
 
-        # Save the state of the screen before trying authentication
-        state = self.context.screen.save_state()
-        #print("State saved:", state)
+        # --- ✅ Check for valid active session first ---
+        if auth.is_session_valid():
+            screen.clear()
+            screen.write("Active session.", line=1, identifier="session_view")
+            time.sleep(1)
+            self.context.processor.execute(command)
+            return
+
+        # --- Otherwise, proceed with normal fingerprint authentication ---
+        screen.clear()
+        screen.write("Waiting for Authentication...", line=1, identifier="waiting_view")
+        screen.write(f"Attempt {attempts + 1} of {MAX_ATTEMPTS}", line=2, identifier="attempts")
+
+        # Save screen state so we can restore between attempts
+        state = screen.save_state()
+
         while attempts < MAX_ATTEMPTS:
-            # Display the current attempt
-            self.context.screen.update("attempts", f"Attempt {attempts + 1} of {MAX_ATTEMPTS}")
-
-            if self.context.authenticator.authenticate():
-                # Restore the screen to the initial state
-                self.context.screen.restore_state(state)
-                # Update directly without checking
-                self.context.screen.update("waiting_view", "Authenticated! :)")
+            print(f"🔍 Attempt {attempts + 1})...")
+            if auth.ensure_authenticated():
                 self.context.processor.execute(command)
-                return  # Exit after successful authentication
+                return  # Exit after success
             else:
-                # Restore the original state if it fails
-                self.context.screen.restore_state(state)
+                screen.restore_state(state)
                 attempts += 1
-                # Direct update without checking
-                self.context.screen.update("attempts", f"Failed attempt {attempts}")
+                screen.write(f"Failed {attempts}/{MAX_ATTEMPTS}", line=1, identifier="failed")
+                print(f"❌ Authentication attempt {attempts} failed.")
 
-        # If we reach here, all attempts failed
-        self.context.screen.update("waiting_view", "Access Denied")
-        self.context.screen.update("attempts", "Maximum attempts reached.")
+        # --- All attempts failed ---
+        screen.update("failed", "Access Denied")
+        screen.write(f"Maximum attempts.", line=2, identifier="denied")
         print("❌ Command dropped due to failed authentication.")
-
+        time.sleep(1.5)
+        return
 
 class MenuState(BaseState):
     def enter(self):
