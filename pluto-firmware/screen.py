@@ -25,7 +25,7 @@ class Screen:
         self.splash = displayio.Group()
         self.display.root_group = self.splash
 
-        # Dictionary to store text dlabels
+        # Dictionary to store text labels
         self.text_labels = {}
 
         # Mapping for line numbers to coordinates
@@ -85,28 +85,22 @@ class Screen:
         
     def save_state(self):
         """
-        Saves the current state of the screen labels.
-        Returns a dictionary with the identifier as key and text as value.
+        Saves the current screen state (references to active label objects).
+        Returns a shallow copy dictionary {identifier: label_object}.
         """
-        saved_state = {}
-        for identifier, text_label in self.text_labels.items():
-            saved_state[identifier] = text_label
-        return saved_state
+        return dict(self.text_labels)
     
     def restore_state(self, saved_state):
         """
-        Restores the screen to a previously saved state.
-
-        :param saved_state: A dictionary with the identifier as key and text as value.
+        Restores previously saved label objects and re-adds them to the display group.
         """
+        # Clear old display group (creates a new self.splash)
         self.clear()
-        # Re-create the text labels exactly as they were
-        for identifier, text_area in saved_state.items():
-            if identifier not in self.text_labels:
-                self.text_labels[identifier] = text_area
-            else:
-                pass
 
+        # Re-attach saved labels to the new display group
+        for identifier, label_obj in saved_state.items():
+            #self.splash.append(label_obj)
+            self.text_labels[identifier] = label_obj
                 
     def remove(self, identifier):
         """

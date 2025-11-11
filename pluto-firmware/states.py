@@ -135,23 +135,22 @@ class AutoState(BaseState):
         state = screen.save_state()
 
         while attempts < MAX_ATTEMPTS:
-            screen.update("attempts", f"Attempt {attempts + 1} of {MAX_ATTEMPTS}")
             print(f"🔍 Attempt {attempts + 1})...")
             if auth.ensure_authenticated():
-                screen.restore_state(state)
-                screen.update("waiting_view", "Authenticated! ;)")
                 self.context.processor.execute(command)
                 return  # Exit after success
             else:
                 screen.restore_state(state)
                 attempts += 1
-                screen.update("waiting_view", f"Failed attempt {attempts}")
+                screen.write(f"Failed attempt {attempts}", line=1, identifier="failed")
                 print(f"❌ Authentication attempt {attempts} failed.")
 
         # --- All attempts failed ---
-        screen.update("waiting_view", "Access Denied")
-        screen.update("attempts", "Maximum attempts reached.")
+        screen.update("failed", "Access Denied")
+        screen.write(f"Maximum attempts.", line=2, identifier="denied")
         print("❌ Command dropped due to failed authentication.")
+        time.sleep(1.5)
+        return
 
 class MenuState(BaseState):
     def enter(self):
