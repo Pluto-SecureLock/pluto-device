@@ -1,6 +1,7 @@
-import os
-import json
 import binascii
+import json
+import os
+import time
 from key_store import KeyStore
 from nvm_storage import save_slot, load_slot, nvm_wipe
 from crypto_utils import generate_salt, hash_pin, derive_key
@@ -17,6 +18,7 @@ PIN_SLOT = 0
 KEY_SLOT = 1
 
 DEBUG = True
+LIFETIME = 30  # seconds
 
 class AuthManager:
     def __init__(self):
@@ -25,7 +27,8 @@ class AuthManager:
         self._f_authenticated = False
         self._vault = None
         self._master_key = None
-        pass
+        self._session_expiry = None
+        self._session_lifetime = LIFETIME
     
     def attach_fingerprint(self, fingerprint):
         self.fingerprint = fingerprint
@@ -166,20 +169,37 @@ class AuthManager:
         if not self.fingerprint.authenticated:
             return False
 
-        self._f_authenticated = True
-
         master_key = self._retrieve_master_key()
-        if master_key:
-            self._master_key = master_key
-            self._vault = KeyStore(self._master_key)
-            return True
+        if not master_key:
+            return False
 
-        return False
+        # Store decrypted vault
+        self._master_key = master_key
+        self._vault = KeyStore(self._master_key)
+
+        # Mark session as active
+        self._f_authenticated = True
+        self._session_expiry = time.monotonic() + self._session_lifetime
+        if DEBUG: print(f"✅ Session active until {self._session_expiry:.0f} (≈{self._session_lifetime}s)")
+        return True
 
     def _retrieve_master_key(self):
         _ , key = self._get_slot(KEY_SLOT)
         print(f"🔑 Master key retrieved: {binascii.hexlify(key).decode('utf-8')}")
         return key
+
+    def is_session_valid(self) -> bool:
+        """Check if fingerprint session is still valid (not expired)."""
+        if not self._f_authenticated or self._session_expiry is None:
+            return False
+        return time.monotonic() < self._session_expiry
+
+    def ensure_authenticated(self) -> bool:
+        """Use cached session if still valid; otherwise, require fingerprint again."""
+        if self.is_session_valid():
+            return True
+        if DEBUG: print("⚠️ Session expired — re-authentication required.")
+        return self.authenticate()
 
     def get_vault(self):
         if not self._f_authenticated or not self._vault:
