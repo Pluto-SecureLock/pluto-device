@@ -59,14 +59,14 @@ class FingerprintAuthenticator:
 
                 # read_templates() gives us a list of occupied slot numbers
                 occupied = set(self.read_templates())
+
                 enrolled_so_far = 0
 
                 for slot in range(1, MAX_SLOTS + 1):
                     if slot in occupied:
                         continue                  # slot already used
                     if DEBUG: print(f"👉 Enrolling into free slot {slot} …")
-                    enroll_index = enrolled_so_far + 1  # 1, 2, 3...
-                    if not self.enroll(slot, enroll_index):
+                    if not self.enroll(slot):
                         if DEBUG: print(f"❌ Enrollment failed in slot {slot}")
                         return False
 
@@ -105,7 +105,7 @@ class FingerprintAuthenticator:
     
     def set_pin(self, passwd: str) -> str:
         self.passwd_tuple = pin_to_tuple(passwd)
-        pin_set = self.finger.set_password(self.passwd_tuple)
+        pin_set = self.finger.set_password(self.passwd_tuple) # PIN [min 0, max 9999]
         if pin_set == adafruit_fingerprint.OK:
             print(f"New PIN {passwd} set successfully.")
             return True
@@ -130,9 +130,9 @@ class FingerprintAuthenticator:
     def initialize(self):
         self._ensure_two_fingerprints()
 
-    def enroll(self, location: int, finger: str) -> bool:
+    def enroll(self, location: int) -> bool:
         self.screen.clear()
-        self.screen.write(f"Creating #{finger}", line=1, identifier="line1")
+        self.screen.write(f"Creating #{location}", line=1, identifier="line1")
         self.screen.write(" ", line=2, identifier="line2")
         for pass_num in (1, 2):
             prompt = "Place finger..." if pass_num == 1 else "Place same finger..."
@@ -174,8 +174,7 @@ class FingerprintAuthenticator:
             print(" ❌")
             self.screen.update(identifier="line2", new_text="Model creation failed")
             return False
-        print(" ✅")
-        # self.screen.update(identifier="line2", new_text=f"Storing at {location}...")
+
         print(f"💾 Storing at slot {location}...", end="")
 
         if self.finger.store_model(location) != adafruit_fingerprint.OK:
