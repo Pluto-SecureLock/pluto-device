@@ -40,7 +40,6 @@ Handles all interactions with the fingerprint sensor. It supports:
 * Authentication (`authenticate`)
 * Enrollment (`enroll`)
 * Deletion (`delete`)
-* Finger detection via IRQ (`finger_irq`)
 * PIN-based protection
 
 ### 3. **USBSerial**
@@ -94,6 +93,14 @@ Manages the display interface, including:
 * Clearing the screen
 * Updating text in specific positions
 
+### 10. **Crypto**
+
+Manages all crypto utilities, including:
+
+* Encryption
+* Hashing
+* Key derivation
+* TRNG
 ---
 
 ## State Management
