@@ -99,6 +99,11 @@ class AuthManager:
     
     def _reset_f_authentication(self):
         self._f_authenticated = False
+        if self._master_key:
+            # Overwrite and delete from memory
+            self._master_key = bytearray(os.urandom(len(self._master_key)))
+        self._master_key = None
+        self._vault = None
 
     def is_registered(self, slot: int = PIN_SLOT) -> bool:
         try:

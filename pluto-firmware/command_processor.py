@@ -14,6 +14,7 @@ class CommandProcessor:
         self.authenticator = authenticator
         self.master_key = None
         self.vault = None
+        self.password = None
 
     def _log_usb_error(self, where: str, exc: Exception) -> None:
         """Write a succinct error message to the USB port."""
@@ -57,7 +58,7 @@ class CommandProcessor:
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
 
                 # Encrypt using the provided key
-                encrypted = encrypt_aes_bytes(plaintext=raw, key=key_bytes)
+                encrypted = encrypt_aes_bytes(plaintext=payload, key=key_bytes)
 
                 self.secure_write(f"🔐 Encrypted (base64): {encrypted}")
 
@@ -72,13 +73,13 @@ class CommandProcessor:
                 _, raw = command.split(" ", 1)
                 
                 # Split into key and payload
-                key_str, _ = raw.strip().split(":", 1)
+                key_str, payload = raw.strip().split(":", 1)
                 
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
 
                 # Encrypt using the provided key
-                decrypted = decrypt_aes_bytes(base64_input=raw, key=key_bytes)
+                decrypted = decrypt_aes_bytes(base64_input=payload, key=key_bytes)
 
                 self.secure_write(f"🔓 Decrypted: {decrypted}")
 
@@ -122,20 +123,24 @@ class CommandProcessor:
 
                 # Use your custom csv_reader to handle quoted fields
                 parts = next(csv_reader(values))
+                if len(parts) < 2:
+                    raise ValueError("Usage: add site:url,username,\"password\",note")
 
-                if len(parts) < 3:
-                    self.secure_write("❌ Missing required fields. Usage: add site:url,username,password,note\n")
-                    return
-
-                url = parts[0]
+                url, username = parts[0], parts[1]
                 username = parts[1]
-                password = parts[2]
+                password = parts[2].strip() if len(parts) > 2 else ""
+                if not password:
+                    if self.password:
+                        password = self.password
+                    else:
+                        raise ValueError("Password missing")
                 note = parts[3] if len(parts) > 3 else ""
                 
                 # Add to vault
                 vault = self.authenticator.get_vault()
                 vault.add(site, url, username, password, note)
-                self.secure_write(f"✅ Added credentials for {site}\n")
+                #self.secure_write(f"✅ Added credentials for {site}\n")
+                self.password = None
 
             except Exception as e:
                 self.secure_write(f"❌ Failed to add credentials: {e}\n")
@@ -229,11 +234,38 @@ class CommandProcessor:
                     else:
                         raise ValueError(f"Unknown parameter: '{key}'")
 
-                password = generate_password(length=length, level=level)
+                self.password = generate_password(length=length, level=level)
 
-                self.hid.type_text(password, delay=DELAY)
+                self.hid.type_text(self.password, delay=DELAY)
+
             except Exception as e:
                 self.secure_write(f"❌ Password generation failed: {e}\n")
+
+        #TODO: Is it a vulnerability to have this command?
+        #Proposal, instead of saying samepass, we could say "passwd same"
+        #This will check if a password was already generated in this session
+        #Send password again and delete it from memory.
+        elif command.startswith("samepass"):
+            """samepass"""
+            try:
+                if self.password:
+                    self.hid.type_text(self.password, delay=DELAY)
+                else:
+                    raise ValueError("No passwd available")
+            except Exception as e:
+                self.secure_write(f"❌{e}\n")
+
+        elif command.startswith("backup"):
+            """backup"""
+            try:
+                vault = self.authenticator.get_vault()
+                _, key_str = command.split(" ", 1)
+                # Convert key string to bytes (assuming it's hex)
+                key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
+                backup_data = vault.backup(key_bytes)
+                self.secure_write(f"Backup data: {backup_data}\n")
+            except Exception as e:
+                self.secure_write(f"❌ Failed to backup credentials: {e}\n")
 
         elif command.lower() == "help":
             self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>")

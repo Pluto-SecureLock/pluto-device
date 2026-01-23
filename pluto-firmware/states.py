@@ -97,7 +97,6 @@ class AutoState(BaseState):
         command = self.context.usb.read(echo=False)
 
         if command:
-            self.context.screen.update("auto_view", f"Recieved {command}")
             self.context.authenticator.set_master_key()  # Ensure master key is set before executing commands
             self.execute_with_retry(command)
             self.context.transition_to(AutoState(self.context))

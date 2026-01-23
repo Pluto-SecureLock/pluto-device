@@ -19,6 +19,16 @@ class KeyStore:
             print("⚠️ Failed to load key store:", e)
             return {}
 
+    def _save(self):
+        try:
+            plaintext = json.dumps(self.db)
+            encrypted = encrypt_aes_bytes(plaintext, self.master_key)
+            with open(KEYS_FILE, "w") as f:
+                f.write(encrypted)
+            print("💾 Vault saved successfully.")
+        except Exception as e:
+            print("❌ Failed to save vault:", e)
+
     def get(self, site):
         return self.db.get(site)
 
@@ -78,16 +88,15 @@ class KeyStore:
             
             key, value = item_str.split(":", 1) # Split only on the first colon in case value has colons
             self.db[site][key.strip()] = value.strip()
-
         self._save()
         return True
-    
-    def _save(self):
+
+    def backup(self, key_bytes):
         try:
+            if key_bytes is None:
+                raise ValueError("Backup key is not set.")
             plaintext = json.dumps(self.db)
-            encrypted = encrypt_aes_bytes(plaintext, self.master_key)
-            with open(KEYS_FILE, "w") as f:
-                f.write(encrypted)
-            print("💾 Vault saved successfully.")
+            encrypted = encrypt_aes_bytes(plaintext, key_bytes) #TODO: key is stored in storage
+            return encrypted
         except Exception as e:
             print("❌ Failed to save vault:", e)
