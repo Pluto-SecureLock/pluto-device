@@ -103,7 +103,7 @@ class KeyStore:
         plaintext = json.dumps(self.db)
         return encrypt_aes_bytes(plaintext, key_bytes)
 
-    def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = False):
+def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = False):
         """
         Restore credentials from an encrypted backup blob.
 
@@ -131,11 +131,14 @@ class KeyStore:
         # 2) Parse JSON
         try:
             backup_db = json.loads(decrypted)
-        except json.JSONDecodeError as e:
+        except Exception as e:
             raise ValueError("Restore blob decrypted but is not valid JSON.") from e
 
         if not isinstance(backup_db, dict):
-            raise ValueError("Restore payload must be a JSON object (dict of credentials).")
+            try:
+                backup_db = dict(backup_db)
+            except Exception as e:
+                raise ValueError(f"Restore payload is not a dict: {e}")
 
         # 3) Decide strategy: replace vs merge
         if overwrite or not self.db:
