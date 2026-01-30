@@ -16,6 +16,7 @@ SLOT_SIZE = 128
 
 PIN_SLOT = 0
 KEY_SLOT = 1
+BACKUP_KEY_SLOT = 2
 
 DEBUG = True
 LIFETIME = 30  # seconds
@@ -53,7 +54,7 @@ class AuthManager:
 
     def _set_slot(self, slot_index: int, salt: bytes, hsh: bytes):
         save_slot(slot_index, SLOT_SIZE, salt, hsh)
-        print(f"Slot {slot_index} updated.")
+        if DEBUG: print(f"Slot {slot_index} updated.")
 
     def _get_slot(self, slot_index: int):
         salt, hsh = load_slot(slot_index, SLOT_SIZE)
@@ -190,8 +191,17 @@ class AuthManager:
 
     def _retrieve_master_key(self):
         _ , key = self._get_slot(KEY_SLOT)
-        print(f"🔑 Master key retrieved: {binascii.hexlify(key).decode('utf-8')}")
+        if DEBUG: print(f"🔑 Master key retrieved: {binascii.hexlify(key).decode('utf-8')}")
         return key
+
+    def _retrieve_backup_key(self):
+        try:
+            _ , key = self._get_slot(BACKUP_KEY_SLOT)
+            if DEBUG: print(f"🔑 Backup key retrieved: {binascii.hexlify(key).decode('utf-8')}")
+            return key
+        except Exception as e:
+            if DEBUG: print(f"⚠️ Could not retrieve backup key: {e}")
+            return None
 
     def is_session_valid(self) -> bool:
         """Check if fingerprint session is still valid (not expired)."""
@@ -211,6 +221,22 @@ class AuthManager:
             raise PermissionError("🔒 Not authenticated or vault not loaded.")
         return self._vault
     
+    def get_backup_key(self):
+        if not self._f_authenticated:
+            if DEBUG: print("🔒 Not authenticated.")
+            raise PermissionError("🔒 Not authenticated.")
+        return self._retrieve_backup_key()
+
+    def store_backup_key(self, key_bytes: bytes):
+        if not self._f_authenticated:
+            raise PermissionError("🔒 Not authenticated.")
+        salt = generate_salt()
+        self._set_slot(BACKUP_KEY_SLOT, salt, key_bytes)
+        if DEBUG: print("✅ Backup key stored.")
+
+    def has_backup_key(self) -> bool:
+        return bool(self.get_backup_key())
+
     def update_fingerprint(self, fingerprint_id):
         if isinstance(fingerprint_id, int):
             if self.authenticate():

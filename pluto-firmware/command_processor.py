@@ -1,6 +1,7 @@
 from crypto_utils import encrypt_aes_bytes, decrypt_aes_bytes
 import time
 from utils import csv_reader, generate_password
+from backup_handler import handle_backup_command, BackupCommandError
 
 
 DELAY = 0.0
@@ -50,20 +51,15 @@ class CommandProcessor:
             try:
                 # Remove the prefix
                 _, raw = command.split(" ", 1)
-                
                 # Split into key and payload
                 key_str, payload = raw.strip().split(":", 1)
-                
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
-
                 # Encrypt using the provided key
                 encrypted = encrypt_aes_bytes(plaintext=payload, key=key_bytes)
-
                 self.secure_write(f"🔐 Encrypted (base64): {encrypted}")
-
             except ValueError:
-                self.secure_write("❌ Error: Expected format 'encrypt key:<hexkey> <payload>'")
+                self.secure_write("❌ Error: Expected format 'encrypt <hexkey>:<payload>'")
             except Exception as e:
                 self.secure_write(f"❌ Encryption failed: {e}")
 
@@ -71,22 +67,17 @@ class CommandProcessor:
             try:
                 # Remove the prefix
                 _, raw = command.split(" ", 1)
-                
                 # Split into key and payload
                 key_str, payload = raw.strip().split(":", 1)
-                
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
-
                 # Encrypt using the provided key
                 decrypted = decrypt_aes_bytes(base64_input=payload, key=key_bytes)
-
                 self.secure_write(f"🔓 Decrypted: {decrypted}")
-
             except ValueError:
-                self.secure_write("❌ Error: Expected format 'encrypt key:<hexkey> <payload>'")
+                self.secure_write("❌ Error: Expected format 'decrypt <hexkey>:<payload>'")
             except Exception as e:
-                self.secure_write(f"❌ Encryption failed: {e}")
+                self.secure_write(f"❌ Decryption failed: {e}")
 
         elif command.startswith("encrypt_save "):
             _, msg = command.split(" ", 1)
@@ -217,7 +208,7 @@ class CommandProcessor:
             except Exception as exc:
                 self.secure_write(f"❌ Bulk-add failed: {exc}\n")
 
-        elif command.startswith("passwd"):
+        elif command == "passwd" or command.startswith("passwd"):
             """passwd len=12,lvl=2"""
             try:
                 _, options = command.split(" ", 1)
@@ -256,17 +247,13 @@ class CommandProcessor:
                 self.secure_write(f"❌{e}\n")
 
         elif command.startswith("backup"):
-            """backup"""
             try:
-                vault = self.authenticator.get_vault()
-                _, key_str = command.split(" ", 1)
-                # Convert key string to bytes (assuming it's hex)
-                key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
-                backup_data = vault.backup(key_bytes)
-                self.secure_write(f"Backup data: {backup_data}\n")
+                result = handle_backup_command(command, authenticator=self.authenticator)
+                self.secure_write(f"{result}\n")
+            except BackupCommandError as e:
+                self.secure_write(f"❌ {e}\n")
             except Exception as e:
                 self.secure_write(f"❌ Failed to backup credentials: {e}\n")
-
         elif command.lower() == "help":
             self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>")
         else:

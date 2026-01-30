@@ -34,7 +34,6 @@ def encrypt_aes(plaintext, key_string):
     result = iv + encrypted
     return binascii.b2a_base64(result).decode("utf-8").strip()
 
-
 def decrypt_aes(base64_input, key_string):
     key = key_string.encode("utf-8")
     key = (key + b"\x00" * BLOCK_SIZE)[:BLOCK_SIZE]

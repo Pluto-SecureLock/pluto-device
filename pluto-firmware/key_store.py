@@ -1,3 +1,4 @@
+import gc
 import json
 from crypto_utils import decrypt_aes_bytes, encrypt_aes_bytes
 from utils import csv_reader
@@ -26,8 +27,10 @@ class KeyStore:
             with open(KEYS_FILE, "w") as f:
                 f.write(encrypted)
             print("💾 Vault saved successfully.")
+            return True
         except Exception as e:
             print("❌ Failed to save vault:", e)
+            return e
 
     def get(self, site):
         return self.db.get(site)
@@ -42,7 +45,6 @@ class KeyStore:
             "note": note,
         }
         self._save()
-
 
     def import_csv(self, csv_blob: str, *, skip_duplicates=False):
         added, updated, skipped = [], [], []
@@ -91,12 +93,78 @@ class KeyStore:
         self._save()
         return True
 
-    def backup(self, key_bytes):
+    def backup(self, key_bytes: bytes) -> str:
+        """
+        Returns an encrypted blob (string) of the vault DB using key_bytes.
+        """
+        if not key_bytes:
+            raise ValueError("Backup key is not set.")
+
+        plaintext = json.dumps(self.db)
+        return encrypt_aes_bytes(plaintext, key_bytes)
+
+    def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = False):
+        """
+        Restore credentials from an encrypted backup blob.
+
+        Behavior:
+          - Decrypts encrypted_blob using key_bytes (the backup key).
+          - If current DB is empty OR KEYS_FILE missing/unreadable, replaces entire DB.
+          - Otherwise merges:
+              - existing keys are updated with backup values
+              - new keys are added
+          - If overwrite=True, always replaces entire DB.
+
+        Persists restored/merged DB encrypted with self.master_key via _save().
+
+        Returns:
+          dict with counts: {"added": int, "updated": int, "total_in_backup": int}
+        """
+        if not key_bytes:
+            raise ValueError("Restore key is missing.")
+        if not encrypted_blob:
+            raise ValueError("Restore blob is missing.")
+
+        # 1) Decrypt backup payload with backup key
+        decrypted = decrypt_aes_bytes(base64_input=encrypted_blob, key=key_bytes)
+
+        # 2) Parse JSON
         try:
-            if key_bytes is None:
-                raise ValueError("Backup key is not set.")
-            plaintext = json.dumps(self.db)
-            encrypted = encrypt_aes_bytes(plaintext, key_bytes) #TODO: key is stored in storage
-            return encrypted
-        except Exception as e:
-            print("❌ Failed to save vault:", e)
+            backup_db = json.loads(decrypted)
+        except json.JSONDecodeError as e:
+            raise ValueError("Restore blob decrypted but is not valid JSON.") from e
+
+        if not isinstance(backup_db, dict):
+            raise ValueError("Restore payload must be a JSON object (dict of credentials).")
+
+        # 3) Decide strategy: replace vs merge
+        if overwrite or not self.db:
+            self.db = backup_db
+            self._save()
+            return {
+                "added": len(backup_db),
+                "updated": 0,
+                "total_in_backup": len(backup_db),
+                "mode": "overwrite" if overwrite else "replace_empty",
+            }
+
+        # 4) Merge into existing DB
+        added = 0
+        updated = 0
+
+        for site, entry in backup_db.items():
+            if site in self.db:
+                # Update entire entry (simpler + deterministic)
+                self.db[site] = entry
+                updated += 1
+            else:
+                self.db[site] = entry
+                added += 1
+
+        self._save()
+        return {
+            "added": added,
+            "updated": updated,
+            "total_in_backup": len(backup_db),
+            "mode": "merge",
+        }
