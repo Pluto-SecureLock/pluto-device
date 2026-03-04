@@ -236,7 +236,7 @@ class CommandProcessor:
             """passwd len=12,lvl=2 or passwd --same"""
             try:
                 _, options = command.split(" ", 1)
-                
+
                 if options.strip() == "--same":
                     if not self.password:
                         raise ValueError("No passwd available")
@@ -253,7 +253,7 @@ class CommandProcessor:
                         if k not in ("len", "lvl"):
                             raise ValueError(f"Unknown parameter: '{k}'")
                         params[k] = int(v.strip())
-                    
+
                     self.password = generate_password(
                         length=params.get("len", 12),
                         level=params.get("lvl", 2)
