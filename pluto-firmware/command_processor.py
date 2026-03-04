@@ -1,3 +1,4 @@
+import json
 from crypto_utils import encrypt_aes_bytes, decrypt_aes_bytes
 import time
 from utils import csv_reader, generate_password
@@ -16,6 +17,7 @@ class CommandProcessor:
         self.master_key = None
         self.vault = None
         self.password = None
+        self.same_used = False
 
     def _log_usb_error(self, where: str, exc: Exception) -> None:
         """Write a succinct error message to the USB port."""
@@ -80,8 +82,29 @@ class CommandProcessor:
                 self.secure_write(f"❌ Decryption failed: {e}")
 
         elif command.startswith("encrypt_save "):
-            _, msg = command.split(" ", 1)
-            encrypted = encrypt_aes_bytes(msg, key_string=self.master_key)
+            try:
+                _, msg = command.split(" ", 1)
+                msg = msg.strip()
+                msg = msg.replace("'", "\"")  # Replace single quotes with double quotes for valid JSON
+
+                # 1) Parse user input into dict (must be JSON object)
+                try:
+                    plaintext_dict = json.loads(msg)
+                except Exception as e:
+                    raise ValueError("Expected JSON object after encrypt_save, e.g. encrypt_save {\"a\":1}") from e
+
+                if not isinstance(plaintext_dict, dict):
+                    raise ValueError("encrypt_save expects a JSON object (dict).")
+
+                # 2) Serialize dict to JSON string (this is what you'll encrypt)
+                plaintext_json = json.dumps(plaintext_dict)
+
+                encrypted = encrypt_aes_bytes(plaintext=plaintext_json, key=self.authenticator.get_backup_key())
+
+                self.secure_write(f"🔐 Encrypted: {encrypted}\n")
+
+            except Exception as e:
+                self.secure_write(f"❌ encrypt_save failed: {e}\n")
 
         elif command.startswith("type "):
             _, domain = command.split(" ", 1)
@@ -130,8 +153,9 @@ class CommandProcessor:
                 # Add to vault
                 vault = self.authenticator.get_vault()
                 vault.add(site, url, username, password, note)
-                #self.secure_write(f"✅ Added credentials for {site}\n")
+                self.secure_write(f"Added credentials\n")
                 self.password = None
+                self.same_used = False
 
             except Exception as e:
                 self.secure_write(f"❌ Failed to add credentials: {e}\n")
@@ -209,42 +233,36 @@ class CommandProcessor:
                 self.secure_write(f"❌ Bulk-add failed: {exc}\n")
 
         elif command == "passwd" or command.startswith("passwd"):
-            """passwd len=12,lvl=2"""
+            """passwd len=12,lvl=2 or passwd --same"""
             try:
                 _, options = command.split(" ", 1)
-                options = options.strip().split(",")
-
-                for option in options:
-                    key, value = option.split("=")
-                    key, value = key.strip().lower(), value.strip()
-
-                    if key == "len":
-                        length = int(value)
-                    elif key == "lvl":
-                        level = int(value)
-                    else:
-                        raise ValueError(f"Unknown parameter: '{key}'")
-
-                self.password = generate_password(length=length, level=level)
-
-                self.hid.type_text(self.password, delay=DELAY)
+                
+                if options.strip() == "--same":
+                    if not self.password:
+                        raise ValueError("No passwd available")
+                    if self.same_used:
+                        self.password = None
+                        raise ValueError("--same already used for this password")
+                    self.hid.type_text(self.password, delay=DELAY)
+                    self.same_used = True
+                else:
+                    params = {}
+                    for opt in options.strip().split(","):
+                        k, v = opt.split("=")
+                        k = k.strip().lower()
+                        if k not in ("len", "lvl"):
+                            raise ValueError(f"Unknown parameter: '{k}'")
+                        params[k] = int(v.strip())
+                    
+                    self.password = generate_password(
+                        length=params.get("len", 12),
+                        level=params.get("lvl", 2)
+                    )
+                    self.same_used = False
+                    self.hid.type_text(self.password, delay=DELAY)
 
             except Exception as e:
                 self.secure_write(f"❌ Password generation failed: {e}\n")
-
-        #TODO: Is it a vulnerability to have this command?
-        #Proposal, instead of saying samepass, we could say "passwd same"
-        #This will check if a password was already generated in this session
-        #Send password again and delete it from memory.
-        elif command.startswith("samepass"):
-            """samepass"""
-            try:
-                if self.password:
-                    self.hid.type_text(self.password, delay=DELAY)
-                else:
-                    raise ValueError("No passwd available")
-            except Exception as e:
-                self.secure_write(f"❌{e}\n")
 
         elif command.startswith("backup"):
             try:
