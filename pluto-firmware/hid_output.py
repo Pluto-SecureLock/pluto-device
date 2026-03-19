@@ -2,11 +2,13 @@ import usb_hid
 from adafruit_hid.keyboard import Keyboard
 from adafruit_hid.keycode import Keycode
 from adafruit_hid.keyboard_layout_us import KeyboardLayoutUS
+from lib.adafruit_hid.keyboard_layout_de import KeyboardLayoutDE
 
 class HIDOutput:
     def __init__(self):
         self.keyboard = Keyboard(usb_hid.devices)
         self.layout = KeyboardLayoutUS(self.keyboard)
+        #self.layout = KeyboardLayoutDE(self.keyboard)
 
     def type_text(self, text, delay=0.1):
         """Types the given text via USB HID with an optional delay between characters."""

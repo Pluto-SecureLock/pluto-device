@@ -208,7 +208,7 @@ class LoginState(BaseState):
         if self.context.authenticator.authenticated:
             try:
                 vault = self.context.authenticator.get_vault()
-                domain = list(vault.db.keys())[self.context.login_index]
+                domain = vault.get_aliases()[self.context.login_index]
                 self.context.screen.write(domain, line=2, identifier="domain")
             except Exception as e:
                 self.context.screen.write("🔒 No credentials", line=2, identifier="domain")
@@ -223,7 +223,7 @@ class LoginState(BaseState):
                 return
 
             vault = self.context.authenticator.get_vault()
-            vault_keys = list(vault.db.keys())
+            vault_keys = vault.get_aliases()
         except Exception as e:
             return
 

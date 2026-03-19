@@ -57,7 +57,17 @@ def load_slot(slot: int, slot_size: int):
 
 def nvm_wipe():
     try:
-        NVM[:] = b"\xFF" * len(NVM)
+        #Iterate byte-by-byte to avoid creating a large temporary buffer in RAM
+        for i in range(len(NVM)):
+            # Only write if the byte isn't already 0xFF
+            if NVM[i] != 0xFF:
+                NVM[i] = 0xFF
+        
+        # Ensure the hardware actually committed the change
+        for i in range(len(NVM)):
+            if NVM[i] != 0xFF:
+                print(f"⚠️ Verification failed at index {i}")
+                return False
         return True
     except Exception as e:
         print(f"❌ Error wiping NVM: {e}")

@@ -9,6 +9,7 @@ class KeyStore:
     def __init__(self, master_key):
         self.master_key = master_key  # raw string (authenticated)
         self.db = self._load_db()
+        self._normalize_loaded_db()
 
     def _load_db(self):
         try:
@@ -32,13 +33,71 @@ class KeyStore:
             print("❌ Failed to save vault:", e)
             return e
 
+    def _find_key(self, identifier: str):
+        """Resolve an entry by URL key first, then by alias for compatibility."""
+        if identifier in self.db:
+            return identifier
+
+        for key, entry in self.db.items():
+            if isinstance(entry, dict) and entry.get("alias") == identifier:
+                return key
+
+        return None
+
+    def _normalize_loaded_db(self):
+        """Migrate legacy alias-keyed entries into URL-keyed entries."""
+        normalized = {}
+        changed = False
+
+        for old_key, entry in self.db.items():
+            if not isinstance(entry, dict):
+                normalized[old_key] = entry
+                continue
+
+            url = entry.get("url", "").strip()
+            alias = entry.get("alias")
+
+            if not alias:
+                alias = old_key
+                entry["alias"] = alias
+                changed = True
+
+            if url:
+                if url != old_key:
+                    changed = True
+                normalized[url] = entry
+            else:
+                # Keep malformed/legacy records reachable even without URL.
+                normalized[old_key] = entry
+
+        if changed:
+            self.db = normalized
+            self._save()
+
+    def get_aliases(self):
+        aliases = []
+        for key, entry in self.db.items():
+            if isinstance(entry, dict):
+                aliases.append(entry.get("alias", key))
+            else:
+                aliases.append(key)
+        return aliases
+
     def get(self, site):
-        return self.db.get(site)
+        entry_key = self._find_key(site)
+        if not entry_key:
+            return None
+        return self.db.get(entry_key)
 
     def add(self, site: str, url: str, username: str,
             password: str, note: str = "") -> None:
         """Add / overwrite one credential and persist."""
-        self.db[site] = {
+        url = url.strip()
+        if not url:
+            raise ValueError("URL is required")
+
+        self.db[url] = {
+            "alias": site,
             "url": url,
             "username": username,
             "password": password,
@@ -57,18 +116,41 @@ class KeyStore:
             name, url, user, pwd, *note = row
             note = note[0] if note else ""
 
-            if skip_duplicates and name in self.db:
-                skipped.append(name)
+            if skip_duplicates and url in self.db:
+                skipped.append(url)
                 continue
 
-            (updated if name in self.db else added).append(name)
+            (updated if url in self.db else added).append(name)
             self.add(name, url, user, pwd, note)
 
         return added, updated, skipped
     
+    # def import_csv(self, csv_blob: str, *, skip_duplicates=False):
+    #     added, updated, skipped = [], [], []
+
+    #     for row_no, row in enumerate(csv_reader(csv_blob), 1):
+    #         if len(row) < 4:
+    #             skipped.append(f"line {row_no} (have {len(row)} cols)")
+    #             continue
+
+    #         name, url, user, pwd, *note = row
+    #         note = note[0] if note else ""
+
+    #         if skip_duplicates and name in self.db:
+    #             skipped.append(name)
+    #             continue
+
+    #         (updated if name in self.db else added).append(name)
+    #         self.db[name] = {"url": url, "username": user, "password": pwd, "note": note}
+
+    #     # Save once
+    #     self._save()
+    #     return added, updated, skipped
+    
     def delete(self, domain: str) -> bool:
-        if domain in self.db:
-            del self.db[domain]
+        key = self._find_key(domain)
+        if key in self.db:
+            del self.db[key]
             self._save()
             return True
         else:
@@ -76,7 +158,8 @@ class KeyStore:
     
     def update(self, site: str, updates_string: str) -> bool:
         """Update an existing credential."""
-        if site not in self.db:
+        entry_key = self._find_key(site)
+        if not entry_key:
             return False
 
         parsed_updates = list(csv_reader(updates_string))
@@ -88,8 +171,14 @@ class KeyStore:
             if ':' not in item_str:
                 continue
             
-            key, value = item_str.split(":", 1) # Split only on the first colon in case value has colons
-            self.db[site][key.strip()] = value.strip()
+            field, value = item_str.split(":", 1) # Split only on the first colon in case value has colons
+            self.db[entry_key][field.strip()] = value.strip()
+
+        # Keep URL as the database key if URL was updated.
+        new_url = self.db[entry_key].get("url", "").strip()
+        if new_url and new_url != entry_key:
+            self.db[new_url] = self.db.pop(entry_key)
+
         self._save()
         return True
 
@@ -101,9 +190,9 @@ class KeyStore:
             raise ValueError("Backup key is not set.")
 
         plaintext = json.dumps(self.db)
-        return encrypt_aes_bytes(plaintext, key_bytes)
+        return encrypt_aes_bytes(plaintext=plaintext, key=key_bytes)
 
-def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = False):
+    def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = False):
         """
         Restore credentials from an encrypted backup blob.
 
@@ -144,6 +233,7 @@ def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = Fa
         if overwrite or not self.db:
             self.db = backup_db
             self._save()
+            self._normalize_loaded_db()
             return {
                 "added": len(backup_db),
                 "updated": 0,
@@ -165,6 +255,7 @@ def restore(self, key_bytes: bytes, encrypted_blob: str, *, overwrite: bool = Fa
                 added += 1
 
         self._save()
+        self._normalize_loaded_db()
         return {
             "added": added,
             "updated": updated,

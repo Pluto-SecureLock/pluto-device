@@ -176,7 +176,7 @@ class CommandProcessor:
         elif command.startswith("showkeys"):
             try:
                 vault = self.authenticator.get_vault()
-                self.secure_write(f"{list(vault.db.keys())}\n")
+                self.secure_write(f"{vault.get_aliases()}\n")
             except Exception as e:
                 self.secure_write(f"❌ Error: retrieving credentials: {e}\n")
 
@@ -244,6 +244,7 @@ class CommandProcessor:
                         self.password = None
                         raise ValueError("--same already used for this password")
                     self.hid.type_text(self.password, delay=DELAY)
+                    self.secure_write(f"Typed\n")
                     self.same_used = True
                 else:
                     params = {}
@@ -260,6 +261,7 @@ class CommandProcessor:
                     )
                     self.same_used = False
                     self.hid.type_text(self.password, delay=DELAY)
+                    self.secure_write(f"Typed\n")
 
             except Exception as e:
                 self.secure_write(f"❌ Password generation failed: {e}\n")
