@@ -6,6 +6,7 @@ from hid_output import HIDOutput
 from command_processor import CommandProcessor
 from finger_print import FingerprintAuthenticator
 from auth_manager import AuthManager
+from identity_manager import IdentityManager
 from states import UnblockState
 
 INITIAL_STATE = UnblockState
@@ -16,7 +17,10 @@ class ApplicationContext:
         self.hid_output = HIDOutput()
         self.fingerprint = None  # Delayed initialization
         self.authenticator = AuthManager()  # Accepts no fingerprint initially
+        self.identity = IdentityManager()
+        self.identity.ensure_identity()
         self.processor = CommandProcessor(self.hid_output,self.usb,self.authenticator)
+        self.processor.attach_identity(self.identity)
         self.encoder = RotaryEncoderWithButton()
         self.screen = Screen()
 
