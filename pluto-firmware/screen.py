@@ -12,7 +12,10 @@ class Screen:
 
         # Initialize I2C if not provided
         if i2c is None:
-            i2c = busio.I2C(board.SCL, board.SDA)
+            try:
+                i2c = board.I2C()
+            except AttributeError:
+                i2c = busio.I2C(board.SCL, board.SDA)
 
         # Initialize display bus
         display_bus = displayio.I2CDisplay(i2c, device_address=address)

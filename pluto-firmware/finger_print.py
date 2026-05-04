@@ -1,8 +1,4 @@
 import time
-import board
-import busio
-import adafruit_fingerprint
-import json
 from  utils import pin_to_tuple
 
 MAX_SLOTS = 127                # sensor’s addressable slots (1-127)
@@ -11,10 +7,15 @@ DEBUG = True
 
 class FingerprintAuthenticator:
     def __init__(self, max_fingers=MAX_FINGERS, passwd: str = "0000", screen=None):
+        import board
+        import busio
+        import adafruit_fingerprint
+
+        self._adafruit = adafruit_fingerprint
         self.screen = screen # Attach the screen if provided
         self.uart = busio.UART(board.TX, board.RX, baudrate=57600, timeout=1)
         self.passwd_tuple = pin_to_tuple(passwd) # "0304"->(0,3,0,4)
-        self.finger = adafruit_fingerprint.Adafruit_Fingerprint(self.uart, passwd=self.passwd_tuple)
+        self.finger = self._adafruit.Adafruit_Fingerprint(self.uart, passwd=self.passwd_tuple)
         if self.finger is None:
             self.uart.deinit()
             raise ValueError("Failed to initialize fingerprint sensor.")
@@ -23,9 +24,22 @@ class FingerprintAuthenticator:
         self._verify_sensor()
         self.finger.set_led(color=3, mode=1, speed=20, cycles=2)
 
+    def _start_waiting_led(self):
+        try:
+            # Blink while waiting for finger placement.
+            self.finger.set_led(color=2, mode=1, speed=40, cycles=0) 
+        except Exception:
+            pass
+
+    def _stop_waiting_led(self):
+        try:
+            self.finger.set_led(color=3, mode=1, speed=20, cycles=1)
+        except Exception:
+            pass
+
     def _verify_sensor(self, DEBUG=True):
         if DEBUG: print("🔋 Verifying sensor...")
-        if self.finger.verify_password() != adafruit_fingerprint.OK:
+        if self.finger.verify_password() != self._adafruit.OK:
             raise RuntimeError("❌ Failed to find sensor; Incorrect password")
         if DEBUG: print("✅ Sensor verified")
         if not self._ensure_two_fingerprints():
@@ -89,6 +103,8 @@ class FingerprintAuthenticator:
         return self._authenticated
     
     def check_system_parameters(self) -> bool:
+        import json
+
         self.finger.read_sysparam()
         print("📟 Current sensor params:")
         current_params = {
@@ -106,7 +122,7 @@ class FingerprintAuthenticator:
     def set_pin(self, passwd: str) -> str:
         self.passwd_tuple = pin_to_tuple(passwd)
         pin_set = self.finger.set_password(self.passwd_tuple) # PIN [min 0, max 9999]
-        if pin_set == adafruit_fingerprint.OK:
+        if pin_set == self._adafruit.OK:
             print(f"New PIN {passwd} set successfully.")
             return True
         else:
@@ -115,14 +131,14 @@ class FingerprintAuthenticator:
         
     def count_templates(self) -> bool:
         status = self.finger.count_templates()
-        if status != adafruit_fingerprint.OK:
+        if status != self._adafruit.OK:
             if DEBUG: print("❌ count_templates() failed")
             raise RuntimeError("Failed to get template count")
         return self.finger.template_count
 
     def read_templates(self) -> bool:
         status = self.finger.read_templates()
-        if status != adafruit_fingerprint.OK:
+        if status != self._adafruit.OK:
             if DEBUG: print("❌ read_templates() failed")
             raise RuntimeError("Failed to read templates")
         return self.finger.templates
@@ -138,15 +154,18 @@ class FingerprintAuthenticator:
             prompt = "Place finger..." if pass_num == 1 else "Place same finger..."
             print(prompt, end="")
             self.screen.update(identifier="line2", new_text=prompt)
+            self._start_waiting_led()
             
             while True:
                 r = self.finger.get_image()
-                if r == adafruit_fingerprint.OK:
+                if r == self._adafruit.OK:
+                    self._stop_waiting_led()
                     print(" 📸")
                     break
-                elif r == adafruit_fingerprint.NOFINGER:
+                elif r == self._adafruit.NOFINGER:
                     time.sleep(0.5)
                 else:
+                    self._stop_waiting_led()
                     error= f" ⚠️ Error code {r}"
                     print(error)
                     self.screen.update(identifier="line2", new_text=error)
@@ -155,7 +174,7 @@ class FingerprintAuthenticator:
             print("⏳ Templating...", end="")
             self.screen.update(identifier="line2", new_text="Templating...")
 
-            if self.finger.image_2_tz(pass_num) != adafruit_fingerprint.OK:
+            if self.finger.image_2_tz(pass_num) != self._adafruit.OK:
                 print(" ❌")
                 self.screen.update(identifier="line2", new_text="Conversion failed")
                 return False
@@ -164,20 +183,20 @@ class FingerprintAuthenticator:
             if pass_num == 1:
                 print("✋ Remove finger…")
                 self.screen.update(identifier="line2", new_text="Remove finger...")
-                while self.finger.get_image() != adafruit_fingerprint.NOFINGER:
+                while self.finger.get_image() != self._adafruit.NOFINGER:
                     time.sleep(1)
 
         print("🔧 Creating model...", end="")
         self.screen.update(identifier="line2", new_text="Creating model...")
         # Create the fingerprint model from the two templates
-        if self.finger.create_model() != adafruit_fingerprint.OK:
+        if self.finger.create_model() != self._adafruit.OK:
             print(" ❌")
             self.screen.update(identifier="line2", new_text="Model creation failed")
             return False
 
         print(f"💾 Storing at slot {location}...", end="")
 
-        if self.finger.store_model(location) != adafruit_fingerprint.OK:
+        if self.finger.store_model(location) != self._adafruit.OK:
             print(" ❌")
             self.screen.update(identifier="line2", new_text="Store failed")
             return False
@@ -195,21 +214,22 @@ class FingerprintAuthenticator:
         self._reset_authentication()  # Reset authentication status
 
         self._verify_sensor(True)
-
         print("🤚 Place finger...", end="")
         self.screen.clear()
         self.screen.write("Place finger...", line=1, identifier="line1")
-        while self.finger.get_image() != adafruit_fingerprint.OK:
+        self._start_waiting_led()
+        while self.finger.get_image() != self._adafruit.OK:
             time.sleep(0.05)
+        self._stop_waiting_led()
         print(" 📸")
 
-        if self.finger.image_2_tz(1) != adafruit_fingerprint.OK:
+        if self.finger.image_2_tz(1) != self._adafruit.OK:
             print(" ⚠️ Conversion failed")
             self.screen.update(identifier="line1", new_text="Conversion failed...")
             return None
 
         print(" 🔍 Searching...", end="")
-        if self.finger.finger_search() != adafruit_fingerprint.OK:
+        if self.finger.finger_search() != self._adafruit.OK:
             print(" ❌ No match")
             self.screen.update(identifier="line1", new_text="NOT a match")
             self.finger.set_led(color=1, mode=2, speed=60, cycles=2)  # Flash red if fingerprint IS NOT a match
@@ -227,7 +247,7 @@ class FingerprintAuthenticator:
         return self.finger.finger_id
 
     def delete(self, location: int):
-        if self.finger.delete_model(location) == adafruit_fingerprint.OK:
+        if self.finger.delete_model(location) == self._adafruit.OK:
             print(f"🗑️  Deleted slot {location}")
             return True
         else:

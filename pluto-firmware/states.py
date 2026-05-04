@@ -1,4 +1,5 @@
 import time
+import gc
 from utils import generate_password
 from encoder import PinEntryHelper
 
@@ -83,7 +84,8 @@ class UnblockState(BaseState):
             else:
                 self.context.screen.update("pin_view", "❌ Wrong PIN")
                 time.sleep(1)
-                self.context.transition_to(UnblockState(self.context))
+                self.pin_helper = PinEntryHelper(self.context.encoder, self.context.screen, prompt="Enter Admin PIN")
+                gc.collect()
 
     def exit(self):
         self.context.screen.clear()
@@ -97,9 +99,12 @@ class AutoState(BaseState):
         command = self.context.usb.read(echo=False)
 
         if command:
+            self.context.ensure_runtime_services()
             self.context.authenticator.set_master_key()  # Ensure master key is set before executing commands
             self.execute_with_retry(command)
-            self.context.transition_to(AutoState(self.context))
+            self.context.screen.clear()
+            self.context.screen.write("Send Command...", line=1, identifier="auto_view")
+            gc.collect()
             
         if self.context.encoder.was_pressed():
             self.context.transition_to(MenuState(self.context))
@@ -122,6 +127,7 @@ class AutoState(BaseState):
             screen.clear()
             screen.write("Active session.", line=1, identifier="session_view")
             time.sleep(1)
+            self.context.ensure_runtime_services()
             self.context.processor.execute(command)
             return
 
@@ -136,6 +142,7 @@ class AutoState(BaseState):
         while attempts < MAX_ATTEMPTS:
             print(f"🔍 Attempt {attempts + 1})...")
             if auth.ensure_authenticated():
+                self.context.ensure_runtime_services()
                 self.context.processor.execute(command)
                 return  # Exit after success
             else:
@@ -240,8 +247,8 @@ class LoginState(BaseState):
         if self.context.encoder.was_pressed():
             domain = vault_keys[self.context.login_index]
             creds = vault.get(domain)
-            self.context.usb.write(f"\U0001F511 Credentials for {domain}: {creds}")
             if creds:
+                self.context.ensure_runtime_services()
                 if (len(creds["username"]) > 0):
                     time.sleep(0.2)
                     self.context.processor.hid.type_text(creds["username"], delay=0.0)
@@ -426,7 +433,11 @@ class SettingsState(BaseState):
                     time.sleep(0.8)
                     self.context.transition_to(SetupState(self.context))
                 else:
-                    self.context.transition_to(SettingsState(self.context))
+                    self.mode = "menu"
+                    self.context.screen.clear()
+                    self.context.screen.write("Settings", line=1, identifier="settings_title")
+                    self.context.screen.write(self.context.settings_list[self.context.settings_index], line=2, identifier="settings_item")
+                    gc.collect()
 
         elif self.context.encoder.rtr_was_pressed():
             self.context.transition_to(MenuState(self.context))
@@ -444,7 +455,11 @@ class SettingsState(BaseState):
             else:
                 self.context.screen.update("pin_view", "❌ Wrong PIN")
                 time.sleep(1)
-                self.context.transition_to(SettingsState(self.context))
+                self.mode = "menu"
+                self.context.screen.clear()
+                self.context.screen.write("Settings", line=1, identifier="settings_title")
+                self.context.screen.write(self.context.settings_list[self.context.settings_index], line=2, identifier="settings_item")
+                gc.collect()
     
     def handle_enter_new_pin(self):
         """
@@ -457,7 +472,11 @@ class SettingsState(BaseState):
             self.context.screen.clear()
             self.context.screen.write("✅ PIN updated!", line=2, identifier="done")
             time.sleep(1)
-            self.context.transition_to(SettingsState(self.context))
+            self.mode = "menu"
+            self.context.screen.clear()
+            self.context.screen.write("Settings", line=1, identifier="settings_title")
+            self.context.screen.write(self.context.settings_list[self.context.settings_index], line=2, identifier="settings_item")
+            gc.collect()
 
     def handle_update_finger(self):
         """
@@ -484,7 +503,11 @@ class SettingsState(BaseState):
             else:
                 self.context.screen.write(f"FP {finger_id} NOT updated!", line=2, identifier="enroll_finger")
             time.sleep(1)
-            self.context.transition_to(SettingsState(self.context))
+            self.mode = "menu"
+            self.context.screen.clear()
+            self.context.screen.write("Settings", line=1, identifier="settings_title")
+            self.context.screen.write(self.context.settings_list[self.context.settings_index], line=2, identifier="settings_item")
+            gc.collect()
 
         elif self.context.encoder.rtr_was_pressed():
             self.context.transition_to(SettingsState(self.context))

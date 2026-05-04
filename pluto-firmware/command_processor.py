@@ -1,24 +1,42 @@
-import json
-from crypto_utils import encrypt_aes_bytes, decrypt_aes_bytes
 import time
+import gc
 from utils import csv_reader, generate_password
-from backup_handler import handle_backup_command, BackupCommandError
-
 
 DELAY = 0.0
 DEBUG_MODE = True
 SESSION_KEY  = bytes.fromhex("f3d1c97a8b4e234c2d10ab51f9c76aee")  # 128-bit key
 
 class CommandProcessor:
-    def __init__(self, hid_output, usb_output, authenticator):
+    def __init__(self, hid_output, usb_output, authenticator, i2c_bus=None):
         self.hid = hid_output
         self.usb = usb_output
         self.authenticator = authenticator
+        self.i2c_bus = i2c_bus
         self.identity = None
         self.master_key = None
         self.vault = None
         self.password = None
         self.same_used = False
+        self._encrypt_fn = None
+        self._decrypt_fn = None
+        self._backup_handler = None
+        self._backup_error = None
+
+    def _load_crypto(self):
+        if self._encrypt_fn is None or self._decrypt_fn is None:
+            from crypto_utils import encrypt_aes_bytes, decrypt_aes_bytes
+
+            self._encrypt_fn = encrypt_aes_bytes
+            self._decrypt_fn = decrypt_aes_bytes
+            gc.collect()
+
+    def _load_backup(self):
+        if self._backup_handler is None or self._backup_error is None:
+            from backup_handler import handle_backup_command, BackupCommandError
+
+            self._backup_handler = handle_backup_command
+            self._backup_error = BackupCommandError
+            gc.collect()
 
     def attach_identity(self, identity):
         self.identity = identity
@@ -32,7 +50,8 @@ class CommandProcessor:
             if DEBUG_MODE:
                 data = str(plaintext).strip()
             else:
-                data = encrypt_aes_bytes(str(plaintext), key=SESSION_KEY)
+                self._load_crypto()
+                data = self._encrypt_fn(str(plaintext), key=SESSION_KEY)
 
             self.usb.write(data + "\n")
             return True
@@ -43,7 +62,8 @@ class CommandProcessor:
     def secure_read(self, command):
         try: 
             if not DEBUG_MODE:
-                command = decrypt_aes_bytes(str(command), key=SESSION_KEY)
+                self._load_crypto()
+                command = self._decrypt_fn(str(command), key=SESSION_KEY)
             return command.strip()
         except Exception as exc:
             self._log_usb_error("secure_read", exc)
@@ -62,7 +82,8 @@ class CommandProcessor:
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
                 # Encrypt using the provided key
-                encrypted = encrypt_aes_bytes(plaintext=payload, key=key_bytes)
+                self._load_crypto()
+                encrypted = self._encrypt_fn(plaintext=payload, key=key_bytes)
                 self.secure_write(f"🔐 Encrypted (base64): {encrypted}")
             except ValueError:
                 self.secure_write("❌ Error: Expected format 'encrypt <hexkey>:<payload>'")
@@ -78,7 +99,8 @@ class CommandProcessor:
                 # Convert key string to bytes (assuming it's hex)
                 key_bytes = bytes.fromhex(key_str)  # or base64.b64decode(key_str) if using base64
                 # Encrypt using the provided key
-                decrypted = decrypt_aes_bytes(base64_input=payload, key=key_bytes)
+                self._load_crypto()
+                decrypted = self._decrypt_fn(base64_input=payload, key=key_bytes)
                 self.secure_write(f"🔓 Decrypted: {decrypted}")
             except ValueError:
                 self.secure_write("❌ Error: Expected format 'decrypt <hexkey>:<payload>'")
@@ -87,6 +109,8 @@ class CommandProcessor:
 
         elif command.startswith("encrypt_save "):
             try:
+                import json
+
                 _, msg = command.split(" ", 1)
                 msg = msg.strip()
                 msg = msg.replace("'", "\"")  # Replace single quotes with double quotes for valid JSON
@@ -103,7 +127,8 @@ class CommandProcessor:
                 # 2) Serialize dict to JSON string (this is what you'll encrypt)
                 plaintext_json = json.dumps(plaintext_dict)
 
-                encrypted = encrypt_aes_bytes(plaintext=plaintext_json, key=self.authenticator.get_backup_key())
+                self._load_crypto()
+                encrypted = self._encrypt_fn(plaintext=plaintext_json, key=self.authenticator.get_backup_key())
 
                 self.secure_write(f"🔐 Encrypted: {encrypted}\n")
 
@@ -272,17 +297,21 @@ class CommandProcessor:
 
         elif command.startswith("backup"):
             try:
-                result = handle_backup_command(command, authenticator=self.authenticator)
+                self._load_backup()
+                result = self._backup_handler(command, authenticator=self.authenticator)
                 self.secure_write(f"{result}\n")
-            except BackupCommandError as e:
+            except self._backup_error as e:
                 self.secure_write(f"❌ {e}\n")
             except Exception as e:
                 self.secure_write(f"❌ Failed to backup credentials: {e}\n")
         elif command == "id_pub":
             try:
-                if not self.identity:
-                    raise RuntimeError("Identity manager not initialized")
-                self.secure_write(f"{self.identity.get_public_key_hex()}\n")
+                from atecc_prototype import create_atecc, generate_key
+                atecc = create_atecc(debug=False, i2c=None)
+                self.secure_write(f"{generate_key(atecc, slot=0, private_key=True)}\n")
+                # if not self.identity:
+                #     raise RuntimeError("Identity manager not initialized")
+                # self.secure_write(f"{self.identity.get_public_key_hex()}\n")
             except Exception as e:
                 self.secure_write(f"❌ Failed to retrieve id_pub: {e}\n")
         elif command == "x25519_gen":
@@ -303,7 +332,16 @@ class CommandProcessor:
                     self.secure_write("⚠️ No temporary x25519 key material found\n")
             except Exception as e:
                 self.secure_write(f"❌ Failed to clear x25519 temporary key: {e}\n")
+        elif command == "atecc_test":
+            try:
+                from atecc_prototype import run_atecc_prototype
+
+                self.secure_write("Running ATECC prototype...\n")
+                run_atecc_prototype(out=self.secure_write, i2c=self.i2c_bus)
+                self.secure_write("ATECC prototype complete\n")
+            except Exception as e:
+                self.secure_write(f"❌ ATECC prototype failed: {e}\n")
         elif command.lower() == "help":
-            self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>")
+            self.hid.type_text("Available: hello, greet, bye, encrypt <msg>, decrypt <base64>, atecc_test")
         else:
             print(f"Unknown command: '{command}'")

@@ -140,7 +140,7 @@ class AuthManager:
             template = self.fingerprint.get_template()
             salt = generate_salt()
             #print(f"🔑 MASTER Template: {binascii.hexlify(template).decode('utf-8')}")
-            print(f"Master Key {template}")
+            #print(f"Master Key {template}")
             aes_key = derive_key(template=template, salt=salt)
             try:
                 self._set_slot(KEY_SLOT, salt, aes_key)
@@ -156,7 +156,7 @@ class AuthManager:
             self.set_master_key()
         salt, key = self._get_slot(KEY_SLOT)
         template = self.fingerprint.get_template()
-        print(f"🔑 Template retrieved: {binascii.hexlify(template).decode('utf-8')}")
+        #print(f"🔑 Template retrieved: {binascii.hexlify(template).decode('utf-8')}")
         self.master_key = derive_key(template=template, salt=salt)
         if DEBUG:
             print(f"🔑 Master key derived: {binascii.hexlify(self.master_key).decode('utf-8')}")
